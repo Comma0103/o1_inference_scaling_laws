@@ -4,7 +4,9 @@ import json
 import typing
 import time
 import logging
+import torch
 from datasets import load_dataset
+from transformers import AutoModelForCausalLM, AutoTokenizer
 from openai import OpenAI
 from tqdm import tqdm
 from IPython import embed
@@ -15,19 +17,25 @@ from PIL import Image
 import re
 
 from helpers.plot_helpers import plot_majority_vote_graph, plot_just_ask_nicely_graph
-from call_gpt import Openai, API_INFOS
 
-model_name_map = {
-    "gpt-4o": "OpenAI-GPT-4o",
-    "gpt-4o-mini": "OpenAI-GPT-4o-mini"
+model_path_map = {
+    "QwQ-32B-Preview": "/home/shaohanh/qilongma/blob/public_models/QwQ-32B-Preview",
+    "Qwen2.5-32B-Instruct": "/home/shaohanh/qilongma/blob/public_models/Qwen2.5-32B-Instruct",
 }
 
 
 # ================ config ====================
 # O1_MODEL = "o1-mini"
-O1_MODEL = "gpt-4o-mini"
-# OPENAI_CLIENT = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
-OPENAI_CLIENT = Openai(apis=API_INFOS[model_name_map[O1_MODEL]])
+O1_MODEL = "Qwen2.5-32B-Instruct"
+model = AutoModelForCausalLM.from_pretrained(
+    model_path_map[O1_MODEL],
+    torch_dtype=torch.bfloat16,
+    load_in_8bit=False,
+    low_cpu_mem_usage=True,
+    device_map="auto",
+)
+model.eval()
+tokenizer = AutoTokenizer.from_pretrained(model_path_map[O1_MODEL])
 PROMPT = """You are a math problem solver. I will give you a problem from the American Invitational Mathematics Examination (AIME). At the end, provide the final answer as a single integer.
 
 Important: You should try your best to use around {token_limit} tokens in your reasoning steps.
@@ -39,14 +47,13 @@ Here's the problem:
 
 Think step by step to solve this problem, use around {token_limit} tokens in your reasoning, and provide the final answer with "the answer is (X)" where X is a single integer.
 """
-EXTRACT_MODEL = "gpt-4o-mini"
-OPENAI_EXTRACT_CLIENT = Openai(apis=API_INFOS[model_name_map[EXTRACT_MODEL]])
 
 shade_regions = True
 run_full_range = False
-max_workers = 32
-max_workers_single = 10
+max_workers = 1
+max_workers_single = 1
 # ================ config ====================
+
 
 SAVE_DIR = f'results'
 timestamp = time.time()
@@ -126,15 +133,23 @@ def get_response(problem: str, token_limit: int, cache: dict, idx: int = 0, N: i
         return cache[cache_key]
     
     formatted_prompt = PROMPT.format(problem=problem, token_limit=token_limit)
+    prompt_len = len(formatted_prompt)
     logging.debug(f"Requesting {token_limit} tokens for problem starting with: {problem[:50]} running {idx} of {N} times.")
     # response = OPENAI_CLIENT.default_client.chat.completions.create(
     #     model=O1_MODEL,
     #     messages=[{"role": "user", "content": formatted_prompt}]
     # )
-    response = OPENAI_CLIENT.call(formatted_prompt, max_tokens=token_limit, return_completion=True)
+    input_ids = tokenizer(formatted_prompt, return_tensors="pt").input_ids.to(model.device)
+    input_token_num = input_ids.shape[1]
+    # print('input_ids:', input_ids.shape, input_ids, "\n\n\n") # torch.Size([1, n])
+    response_ids = model.generate(input_ids, do_sample=False, temperature=0.0, max_new_tokens=token_limit)
+    # print('response_ids:', response_ids.shape, response_ids, "\n\n\n") # torch.Size([1, n+m])
+    response = tokenizer.decode(response_ids[0], skip_special_tokens=True)
+    # print('response:', response, "\n\n\n") # prompt + response
+    # exit()
     result = {
-        'content': response.choices[0].message.content,
-        'tokens': response.usage.completion_tokens
+        'content': response[prompt_len:],
+        'tokens': response_ids.shape[1] - input_token_num
     }
     cache[cache_key] = result
     logging.debug(f"Received {result['tokens']} tokens for problem starting with: {problem[:50]}. Requested tokens: {token_limit}.")

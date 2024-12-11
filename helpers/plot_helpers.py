@@ -6,7 +6,8 @@ import logging
 GRAPH_FOLDER = "graphs"
 HELPER_FOLDER = "helpers"
 
-def plot_majority_vote_graph(results: list[dict[str, typing.Any]], shade_regions: bool = False) -> None:
+def plot_majority_vote_graph(results: list[dict[str, typing.Any]], shade_regions: bool = False, 
+                             graph_save_dir: str = GRAPH_FOLDER, result_save_dir: str = HELPER_FOLDER) -> None:
     """
     Plot the majority vote graph.
 
@@ -20,7 +21,7 @@ def plot_majority_vote_graph(results: list[dict[str, typing.Any]], shade_regions
     plt.xlabel('tokens used at test-time (log scale)', fontsize=13)
     plt.ylabel('pass@1 accuracy', fontsize=13)
     plt.ylim(0, 100)
-    plt.title('o1 mini AIME accuracy\nat test time (reconstructed)', fontsize=15)
+    plt.title('Model AIME accuracy\nat test time (reconstructed)', fontsize=15)
     plt.tick_params(axis='both', which='major', labelsize=10)
 
     if shade_regions:
@@ -29,7 +30,7 @@ def plot_majority_vote_graph(results: list[dict[str, typing.Any]], shade_regions
         plt.axvspan(min([r['avg_tokens_used'] for r in results]) // 2, 2**14, facecolor='lightgreen', alpha=0.3)
         plt.axvspan(2**14, 2**17, facecolor='lightblue', alpha=0.3)
 
-        plt.text(2**11, 85, "just ask o1-mini \nto think longer", fontsize=12, ha='center', va='center', color='green')
+        plt.text(2**11, 85, "just ask model \nto think longer", fontsize=12, ha='center', va='center', color='green')
         plt.text(2**15*1.4, 85, 'majority\nvote', fontsize=12, ha='center', va='center', color='blue')
 
         plt.axvline(x=2**17, color='black', linestyle='--')
@@ -39,7 +40,7 @@ def plot_majority_vote_graph(results: list[dict[str, typing.Any]], shade_regions
 
     plt.tight_layout()
     accuracy_vs_tokens_plot_name = 'accuracy_vs_tokens_{}.png'.format("shade_regions" if shade_regions else "no_shade_regions")
-    plt.savefig(f"{GRAPH_FOLDER}/{accuracy_vs_tokens_plot_name}", dpi=300, facecolor='white', edgecolor='none')
+    plt.savefig(f"{graph_save_dir}/{accuracy_vs_tokens_plot_name}", dpi=300, facecolor='white', edgecolor='none')
     plt.close()
 
     print(f"Plot saved as {accuracy_vs_tokens_plot_name}")
@@ -53,15 +54,16 @@ def plot_majority_vote_graph(results: list[dict[str, typing.Any]], shade_regions
         plt.ylabel('Actual Tokens Used')
         plt.title('Token Limit vs. Actual Tokens Used')
         plt.tight_layout()
-        token_limit_vs_actual_plot_name = 'token_limit_vs_actual.png'
-        plt.savefig(f"{GRAPH_FOLDER}/{token_limit_vs_actual_plot_name}")
-
-        with open(f'{HELPER_FOLDER}/results_log_majority_vote.json', 'w') as f:
-            json.dump(results, f, indent=2)
-
+        token_limit_vs_actual_plot_name = 'token_limit_vs_actual_{}.png'.format("shade_regions" if shade_regions else "no_shade_regions")
+        plt.savefig(f"{graph_save_dir}/{token_limit_vs_actual_plot_name}")
         print(f"plots saved to {token_limit_vs_actual_plot_name}")
 
-def plot_just_ask_nicely_graph(results: list[dict[str, typing.Any]], run_full_range: bool = False) -> None:
+    with open(f'{result_save_dir}/results_majority_vote_{"shade_regions" if shade_regions else "no_shade_regions"}.json', 'w') as f:
+        json.dump(results, f, indent=2)
+
+
+def plot_just_ask_nicely_graph(results: list[dict[str, typing.Any]], run_full_range: bool = False,
+                               graph_save_dir: str = GRAPH_FOLDER, result_save_dir: str = HELPER_FOLDER) -> None:
     """
     Plot the just ask nicely graph.
 
@@ -78,12 +80,12 @@ def plot_just_ask_nicely_graph(results: list[dict[str, typing.Any]], run_full_ra
     plt.title('Token Limit vs. Actual Tokens Used')
     plt.tight_layout()
     if run_full_range:
-        plt_name = f"{GRAPH_FOLDER}/full_just_ask_nicely.png"
+        plt_name = f"{graph_save_dir}/full_just_ask_nicely.png"
     else:
-        plt_name = f"{GRAPH_FOLDER}/just_ask_nicely_tokens.png"
-
-        with open(f'{HELPER_FOLDER}/results_log_just_ask_nicely.json', 'w') as f:
-            json.dump(results, f, indent=2)
-    
+        plt_name = f"{graph_save_dir}/just_ask_nicely_tokens.png"
     plt.savefig(plt_name)
     print(f"plots saved to {plt_name}")
+
+    with open(f'{result_save_dir}/results_just_ask_nicely_{"full_range" if run_full_range else "no_full_range"}.json', 'w') as f:
+        json.dump(results, f, indent=2)
+    

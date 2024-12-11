@@ -1,0 +1,9 @@
+.*
+!.gitignore
+!.gitattributes
+
+log/
+results/
+__pycache__/
+
+call_gpt.py
