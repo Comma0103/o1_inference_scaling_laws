@@ -1,0 +1,11 @@
+# azure_storage
+datasets
+ipython
+matplotlib
+numpy
+openai
+Pillow
+torch
+tqdm
+transformers
+vllm
