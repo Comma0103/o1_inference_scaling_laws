@@ -7,7 +7,7 @@ GRAPH_FOLDER = "graphs"
 HELPER_FOLDER = "helpers"
 
 def plot_majority_vote_graph(results: list[dict[str, typing.Any]], shade_regions: bool = False, 
-                             graph_save_dir: str = GRAPH_FOLDER, result_save_dir: str = HELPER_FOLDER) -> None:
+                             graph_save_dir: str = GRAPH_FOLDER, result_save_dir: str = HELPER_FOLDER, subject: str = 'AIME') -> None:
     """
     Plot the majority vote graph.
 
@@ -21,7 +21,7 @@ def plot_majority_vote_graph(results: list[dict[str, typing.Any]], shade_regions
     plt.xlabel('tokens used at test-time (log scale)', fontsize=13)
     plt.ylabel('pass@1 accuracy', fontsize=13)
     plt.ylim(0, 100)
-    plt.title('Model AIME accuracy\nat test time (reconstructed)', fontsize=15)
+    plt.title(f'Model {subject} accuracy\nat test time (reconstructed)', fontsize=15)
     plt.tick_params(axis='both', which='major', labelsize=10)
 
     if shade_regions:
@@ -39,7 +39,7 @@ def plot_majority_vote_graph(results: list[dict[str, typing.Any]], shade_regions
 
 
     plt.tight_layout()
-    accuracy_vs_tokens_plot_name = 'accuracy_vs_tokens_{}.png'.format("shade_regions" if shade_regions else "no_shade_regions")
+    accuracy_vs_tokens_plot_name = 'accuracy_vs_tokens_{}_{}.png'.format("shade_regions" if shade_regions else "no_shade_regions", subject)
     plt.savefig(f"{graph_save_dir}/{accuracy_vs_tokens_plot_name}", dpi=300, facecolor='white', edgecolor='none')
     plt.close()
 

@@ -103,12 +103,12 @@ def save_cache(cache, filename):
         json.dump(cache, f)
 
 
-def get_response(problem: str, token_limit: int, cache: dict, idx: int = 0, N: int = 0) -> dict:
+def get_response(example: dict, token_limit: int, cache: dict, idx: int = 0, N: int = 0) -> dict:
     """
     Get a response from the model.
 
     Args:
-        problem (str): The problem to process.
+        example (dict): The problem to process. {'id': int64, 'problem': str, 'solution': str, 'answer': str, 'url': str}
         token_limit (int): The token limit for the model.
         cache (dict): The cache to use for storing responses.
         idx (int, optional): The index of the response to process. Defaults to 0.
@@ -121,13 +121,18 @@ def get_response(problem: str, token_limit: int, cache: dict, idx: int = 0, N: i
     #     cache_key = f"{O1_MODEL}_{PROMPT}_{problem}_{token_limit}_{idx}"
     # else:
     #     cache_key = f"{O1_MODEL}_{PROMPT}_{problem}_{token_limit}"
-    cache_key = f"{token_limit}_{problem}_{idx}"
-    if cache_key in cache:
-        logging.debug(f"Cache hit for problem: {problem[:50]}. idx: {idx}. Requested tokens: {token_limit}.")
-        return cache[cache_key]
+    # cache_key = f"{token_limit}_{problem}_{idx}"
+    # if cache_key in cache:
+    #     logging.debug(f"Cache hit for problem: {problem[:50]}. idx: {idx}. Requested tokens: {token_limit}.")
+    #     return cache[cache_key]
+    if example['id'] not in cache:
+        cache[example['id']] = {'problem': example['problem'], 'solution': example['solution'], 'answer': example['answer'], 'responses': {}}
+    elif token_limit in cache[example['id']]['responses'] and idx in cache[example['id']]['responses'][token_limit]:
+        logging.debug(f"Cache hit for problem: {example['problem'][:50]}. idx: {idx}. Requested tokens: {token_limit}.")
+        return cache[example['id']]['responses'][token_limit][idx]
     
-    formatted_prompt = PROMPT.format(problem=problem, token_limit=token_limit)
-    logging.debug(f"Requesting {token_limit} tokens for problem starting with: {problem[:50]} running {idx} of {N} times.")
+    formatted_prompt = PROMPT.format(problem=example['problem'], token_limit=token_limit)
+    logging.debug(f"Requesting {token_limit} tokens for problem starting with: {example['problem'][:50]} running {idx} of {N} times.")
     # response = OPENAI_CLIENT.default_client.chat.completions.create(
     #     model=O1_MODEL,
     #     messages=[{"role": "user", "content": formatted_prompt}]
@@ -137,8 +142,11 @@ def get_response(problem: str, token_limit: int, cache: dict, idx: int = 0, N: i
         'content': response.choices[0].message.content,
         'tokens': response.usage.completion_tokens
     }
-    cache[cache_key] = result
-    logging.debug(f"Received {result['tokens']} tokens for problem starting with: {problem[:50]}. Requested tokens: {token_limit}.")
+    # cache[cache_key] = result
+    if token_limit not in cache[example['id']]['responses']:
+        cache[example['id']]['responses'][token_limit] = {}
+    cache[example['id']]['responses'][token_limit][idx] = result
+    logging.debug(f"Received {result['tokens']} tokens for problem starting with: {example['problem'][:50]}. Requested tokens: {token_limit}.")
     return result
 
 
@@ -181,38 +189,41 @@ def get_response(problem: str, token_limit: int, cache: dict, idx: int = 0, N: i
 #     cache[cache_key] = result
 #     return result
 
-def extract_answer(response_content: str, cache: dict) -> int:
+def extract_answer(response: dict, cache: dict) -> int:
     """
     Extract the final integer answer from the response content.
 
     Args:
-        response_content (str): The response content to extract the answer from.
+        response (dict): The response to extract the answer from. {'content': str, 'tokens': int}
         cache (dict): The cache to use for storing responses.
 
     Returns:
         int: The final integer answer.
     """
-    cache_key = f"extract_answer_{response_content}"
-    if cache_key in cache:
-        return cache[cache_key]
+    # cache_key = f"extract_answer_{response_content}"
+    # if cache_key in cache:
+    #     return cache[cache_key]
+    if 'answer_pred' in response:
+        return response['answer_pred']
 
     pattern = r"[aA]nswer is \(?(\d+)\)?" # 在文本中找到以 answer is 开头，后面紧跟的一个正整数的字符串
     try:
-        match = re.search(pattern, str(response_content))
+        match = re.search(pattern, str(response['content']))
     except Exception as e:
-        logging.debug(f"Error {str(e)} in extracting answer in response: " + str(response_content))
+        logging.debug(f"Error {str(e)} in extracting answer in response: " + str(response['content']))
     if match:
         extracted_answer = match.group(1)
     else:
-        logging.info("1st answer extract failed in: \n" + str(response_content))
-        extracted_answer = extract_again(response_content)
+        logging.info("1st answer extract failed in: \n" + str(response['content']))
+        extracted_answer = extract_again(response['content'])
     if extracted_answer is not None:
-        result = int(extracted_answer)
+        answer_pred = int(extracted_answer)
     else:
-        result = None
-    
-    cache[cache_key] = result
-    return result
+        answer_pred = None
+    # cache[cache_key] = answer_pred
+    response['answer_pred'] = answer_pred
+
+    return answer_pred
 
 def extract_again(text):
     match = re.search(r'.*[aA]nswer:\s*(\d+)', text) # 最后一个匹配 Answer: 或 answer: 后紧跟的一个正整数的字符串
@@ -235,7 +246,7 @@ def generate_single_response(example: dict, token_limit: int, cache: dict, idx: 
     Get a single response for a problem.
 
     Args:
-        example (dict): The problem to process.
+        example (dict): The problem to process. {'id': int64, 'problem': str, 'solution': str, 'answer': str, 'url': str}
         token_limit (int): The token limit for the model.
         cache (dict): The cache to use for storing responses.
         idx (int): The index of the response to process.
@@ -243,10 +254,10 @@ def generate_single_response(example: dict, token_limit: int, cache: dict, idx: 
     Returns:
         tuple[int, int]: A tuple containing the answer and the number of tokens used.
     """
-    response = get_response(example['problem'], token_limit, cache, idx=idx, N=N)
-    answer = extract_answer(response['content'], cache)
+    response = get_response(example, token_limit, cache, idx=idx, N=N)
+    answer = extract_answer(response, cache)
     if answer is None:
-        logging.info(f"Answer is None for problem: {example['problem']}")
+        logging.info(f"Answer is None for problem: {example['problem']}, token limit: {token_limit}, idx: {idx}.")
         answer = 0
     return answer, response['tokens']
 
@@ -266,6 +277,7 @@ def process_single_example(example: dict, token_limit: int, cache: dict, N: int,
         of tokens used.
     """
     answers = []
+    tokens_list = []
     total_tokens = 0
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -274,16 +286,16 @@ def process_single_example(example: dict, token_limit: int, cache: dict, N: int,
         for future in concurrent.futures.as_completed(futures):
             try:
                 answer, tokens = future.result()
+                answers.append(answer)
+                tokens_list.append(tokens)
+                total_tokens += tokens
             except Exception as e:
                 logging.exception(f"Error processing result: {e}.")
-                answer, tokens = 0, 0
-
-            answers.append(answer)
-            total_tokens += tokens
+                # answer, tokens = 0, 0
     
     logging.info(f"Obtained answers for problem starting with: {example['problem'][:50]}.\n"
                   f"Correct answer: {example['answer']}.\n"
-                  f"Obtained answers: {sorted(answers)}.\n")
+                  f"Obtained answers (with tokens used): {[(answer, tokens) for answer, tokens in zip(answers, tokens_list)]}.\n")
 
     # Compute majority vote
     majority_answers = statistics.multimode(answers)

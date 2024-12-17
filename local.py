@@ -58,7 +58,7 @@ max_workers_single = 1
 SAVE_DIR = f'results'
 timestamp = time.time()
 time_str = time.strftime('%m-%d_%H-%M', time.localtime(timestamp))
-run_output_dir = f'{SAVE_DIR}/{O1_MODEL}/{time_str}'
+run_output_dir = f'{SAVE_DIR}/{O1_MODEL}/AIME/{time_str}'
 os.makedirs(run_output_dir, exist_ok=True)
 
 RESPONSE_CACHE_FILENAME = f'{run_output_dir}/response_cache.json'
