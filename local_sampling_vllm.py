@@ -46,8 +46,8 @@ N_SAMPLE = 200
 N_BUCKET = 10
 
 MAX_WORKERS = 1
-# MAX_WORKERS_SINGLE = 1
 # ================ config ====================
+
 
 SAVE_DIR = f'results'
 timestamp = time.time()
@@ -63,6 +63,7 @@ logging.basicConfig(
         logging.StreamHandler(sys.stdout)
     ]
 )
+
 
 def load_model():
     llm = LLM(
@@ -101,32 +102,6 @@ def save_cache(cache, filename):
     with open(filename, 'w') as f:
         json.dump(cache, f)
 
-# def get_response(example: dict, cache: dict, idx: int = 0) -> dict:
-#     if example['id'] not in cache:
-#         cache[example['id']] = {'problem': example['problem'], 'solution': example['solution'], 'answer': example['answer'], 'responses': {}}
-#     elif idx in cache[example['id']]['responses']:
-#         logging.debug(f"Cache hit for problem: {example['problem'][:50]}. idx: {idx}.")
-#         return cache[example['id']]['responses'][idx]
-    
-#     formatted_prompt = PROMPT.format(problem=example['problem'])
-#     prompt_len = len(formatted_prompt)
-#     logging.debug(f"Requesting response for problem starting with: {example['problem'][:50]} running {idx} of {N_SAMPLE} times.")
-#     # response = OPENAI_CLIENT.call(formatted_prompt, max_tokens=None, temperature=TEMPERATURE, return_completion=True)
-#     input_ids = tokenizer(formatted_prompt, return_tensors="pt").input_ids.to(model.device)
-#     input_token_num = input_ids.shape[1]
-#     # print('input_ids:', input_ids.shape, input_ids, "\n\n\n") # torch.Size([1, n])
-#     response_ids = model.generate(input_ids, do_sample=True, temperature=TEMPERATURE, max_new_tokens=MAX_NEW_TOKENS)
-#     # print('response_ids:', response_ids.shape, response_ids, "\n\n\n") # torch.Size([1, n+m])
-#     response = tokenizer.decode(response_ids[0], skip_special_tokens=True)
-#     # print('response:', response, "\n\n\n") # prompt + response
-#     # exit()
-#     result = {
-#         'content': response[prompt_len:],
-#         'tokens': response_ids.shape[1] - input_token_num
-#     }
-#     cache[example['id']]['responses'][idx] = result
-#     logging.info(f"Received {result['tokens']} tokens as response for problem starting with: {example['problem'][:50]}, idx: {idx}.")
-#     return result
 
 def extract_answer(response: dict, cache: dict) -> int:
     if 'answer_pred' in response:
@@ -144,7 +119,6 @@ def extract_answer(response: dict, cache: dict) -> int:
         extracted_answer = extract_again(response['content'])
     
     answer_pred = int(extracted_answer) if extracted_answer else None
-    response['answer_pred'] = answer_pred
     return answer_pred
 
 def extract_again(text):
@@ -159,19 +133,12 @@ def extract_final(text):
     match = re.search(pattern, text, re.DOTALL)
     return match.group(0) if match else None
 
-# def generate_single_response(example: dict, cache: dict, idx: int) -> tuple[int, int]:
-#     response = get_response(example, cache, idx=idx)
-#     answer = extract_answer(response, cache)
-#     if answer is None:
-#         logging.info(f"\nAnswer is None for problem: {example['problem']}, idx: {idx}, token used: {response['tokens']}.\n")
-#         answer = 0
-#     return answer, response['tokens']
 
 def batch_inference(llm, sampling_params, inference_batch, cache, example_id):
     start = time.time()
     outputs = llm.generate(inference_batch, sampling_params)
     logging.info("Inference batch, size: " + str(len(inference_batch)) + ", costing time: " + str(time.time() - start))
-    responses = []
+    results_batch = []
     for idx, output in enumerate(outputs):
         generated_text = output.outputs[0].text
         tokens = len(output.outputs[0].token_ids)
@@ -180,13 +147,13 @@ def batch_inference(llm, sampling_params, inference_batch, cache, example_id):
             'tokens': tokens
         }
         cache[example_id]['responses'][idx] = response
-        logging.info(f"Received {response['tokens']} tokens as response, idx: {idx}.")
+        logging.debug(f"Received {response['tokens']} tokens as response, idx: {idx}.")
         answer_pred = extract_answer(response, cache)
+        response['answer_pred'] = answer_pred
         if answer_pred is None:
             logging.info(f"\nAnswer is None for idx: {idx}, token used: {response['tokens']}.\n")
-            answer_pred = 0
-        responses.append((answer_pred, tokens))
-    return responses
+        results_batch.append((answer_pred, tokens))
+    return results_batch
 
 def generate_sampled_responses(example: dict, model, tokenizer, cache: dict) -> list[tuple[int, int]]:
     if example['id'] not in cache:
@@ -206,22 +173,11 @@ def generate_sampled_responses(example: dict, model, tokenizer, cache: dict) -> 
     logging.info("evaluating: " + example['problem'][:50])
     responses = batch_inference(llm, sampling_params, inference_batch, cache, example['id'])
     logging.info("\n")
-
-    # responses = []
-
-    # with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS_SINGLE) as executor:
-    #     futures = [executor.submit(generate_single_response, example, cache, idx) for idx in range(N_SAMPLE)]
-
-    #     for future in concurrent.futures.as_completed(futures):
-    #         try:
-    #             answer, tokens = future.result()
-    #             responses.append((answer, tokens))
-    #         except Exception as e:
-    #             logging.exception(f"Error processing result: {e}.")
     
     logging.info(f"Obtained answers for problem starting with: {example['problem'][:50]}.\n"
                   f"Correct answer: {example['answer']}.\n"
                   f"Obtained answers (with tokens used): {responses}.\n\n")
+    save_cache(cache, RESPONSE_CACHE_FILENAME)
 
     return responses
 
@@ -255,7 +211,7 @@ def calculate_bucket_accuracy(dataset: list[dict], model, tokenizer, cache: dict
 
             if bucket_responses:
                 random_response = bucket_responses[np.random.randint(0, len(bucket_responses))]
-                score = 1 if int(example['answer']) == random_response[0] else 0
+                score = 1 if random_response[0] is not None and int(example['answer']) == int(random_response[0]) else 0
                 results_by_bucket[bucket_idx].append(score)
             else:
                 num_missing_in_bucket[bucket_idx] += 1
