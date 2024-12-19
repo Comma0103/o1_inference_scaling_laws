@@ -4,9 +4,7 @@ import json
 import typing
 import time
 import logging
-import torch
 from datasets import load_dataset
-from transformers import AutoModelForCausalLM, AutoTokenizer
 from openai import OpenAI
 from tqdm import tqdm
 from IPython import embed
@@ -17,24 +15,18 @@ from PIL import Image
 import re
 
 from helpers.plot_helpers import plot_majority_vote_graph, plot_just_ask_nicely_graph
+from call_gpt import Openai, API_INFOS
 
-model_path_map = {
-    "QwQ-32B-Preview": "/home/shaohanh/qilongma/blob/public_models/QwQ-32B-Preview",
-    "Qwen2.5-32B-Instruct": "/home/shaohanh/qilongma/blob/public_models/Qwen2.5-32B-Instruct",
+model_name_map = {
+    "gpt-4o": "OpenAI-GPT-4o",
+    "gpt-4o-mini": "OpenAI-GPT-4o-mini"
 }
 
 # ================ config ====================
 # O1_MODEL = "o1-mini"
-O1_MODEL = "Qwen2.5-32B-Instruct"
-model = AutoModelForCausalLM.from_pretrained(
-    model_path_map[O1_MODEL],
-    torch_dtype=torch.bfloat16,
-    load_in_8bit=False,
-    low_cpu_mem_usage=True,
-    device_map="auto",
-)
-model.eval()
-tokenizer = AutoTokenizer.from_pretrained(model_path_map[O1_MODEL])
+O1_MODEL = "gpt-4o-mini"
+# OPENAI_CLIENT = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+OPENAI_CLIENT = Openai(apis=API_INFOS[model_name_map[O1_MODEL]])
 PROMPT = """You are a math problem solver. I will give you a problem from the American Invitational Mathematics Examination (AIME). At the end, provide the final answer as a single integer.
 
 Important: You should try your best to use various numbers of total tokens in your reasoning steps.
@@ -47,9 +39,10 @@ Here's the problem:
 Think step by step to solve this problem, use various numbers of total tokens in your reasoning, and provide the final answer with "the answer is (X)" where X is a single integer.
 """
 TEMPERATURE = 0.8
-MAX_NEW_TOKENS = 32768
 N_SAMPLE = 200
 N_BUCKET = 10
+EXTRACT_MODEL = "gpt-4o-mini"
+OPENAI_EXTRACT_CLIENT = Openai(apis=API_INFOS[model_name_map[EXTRACT_MODEL]])
 
 MAX_WORKERS = 1
 MAX_WORKERS_SINGLE = 1
@@ -59,6 +52,7 @@ SAVE_DIR = f'results'
 timestamp = time.time()
 time_str = time.strftime('%m-%d_%H-%M', time.localtime(timestamp))
 run_output_dir = f'{SAVE_DIR}/{O1_MODEL}/AIME/sampling/{time_str}'
+run_output_dir = '/home/shaohanh/qilongma/o1_inference_scaling_laws/results/gpt-4o-mini/AIME/sampling/12-13_06-12_copy'
 os.makedirs(run_output_dir, exist_ok=True)
 
 RESPONSE_CACHE_FILENAME = f'{run_output_dir}/response_cache.json'
@@ -95,23 +89,14 @@ def get_response(example: dict, cache: dict, idx: int = 0) -> dict:
         return cache[str(example['id'])]['responses'][str(idx)]
     
     formatted_prompt = PROMPT.format(problem=example['problem'])
-    prompt_len = len(formatted_prompt)
     logging.debug(f"Requesting response for problem starting with: {example['problem'][:50]} running {idx} of {N_SAMPLE} times.")
-    # response = OPENAI_CLIENT.call(formatted_prompt, max_tokens=None, temperature=TEMPERATURE, return_completion=True)
-    input_ids = tokenizer(formatted_prompt, return_tensors="pt").input_ids.to(model.device)
-    input_token_num = input_ids.shape[1]
-    # print('input_ids:', input_ids.shape, input_ids, "\n\n\n") # torch.Size([1, n])
-    response_ids = model.generate(input_ids, do_sample=True, temperature=TEMPERATURE, max_new_tokens=MAX_NEW_TOKENS)
-    # print('response_ids:', response_ids.shape, response_ids, "\n\n\n") # torch.Size([1, n+m])
-    response = tokenizer.decode(response_ids[0], skip_special_tokens=True)
-    # print('response:', response, "\n\n\n") # prompt + response
-    # exit()
+    response = OPENAI_CLIENT.call(formatted_prompt, max_tokens=None, temperature=TEMPERATURE, return_completion=True)
     result = {
-        'content': response[prompt_len:],
-        'tokens': response_ids.shape[1] - input_token_num
+        'content': response.choices[0].message.content,
+        'tokens': response.usage.completion_tokens
     }
     cache[example['id']]['responses'][idx] = result
-    logging.info(f"Received {result['tokens']} tokens as response for problem starting with: {example['problem'][:50]}, idx: {idx}.")
+    logging.debug(f"Received {result['tokens']} tokens for problem starting with: {example['problem'][:50]}.")
     return result
 
 def extract_answer(response: dict, cache: dict) -> int:
@@ -169,7 +154,6 @@ def generate_sampled_responses(example: dict, cache: dict) -> list[tuple[int, in
     logging.info(f"\n\nObtained answers for problem starting with: {example['problem'][:50]}.\n"
                   f"Correct answer: {example['answer']}.\n"
                   f"Obtained answers (with tokens used): {responses}.\n\n")
-    save_cache(cache, RESPONSE_CACHE_FILENAME)
 
     return responses
 

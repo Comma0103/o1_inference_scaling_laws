@@ -83,9 +83,9 @@ def save_cache(cache, filename):
 def get_response(example: dict, cache: dict, idx: int = 0) -> dict:
     if int(example['id']) not in cache and str(example['id']) not in cache:
         cache[example['id']] = {'problem': example['problem'], 'solution': example['solution'], 'answer': example['answer'], 'responses': {}}
-    elif idx in cache[str(example['id'])]['responses']:
+    elif str(idx) in cache[str(example['id'])]['responses']:
         logging.info(f"Cache hit for problem: {example['problem'][:50]}. idx: {idx}.")
-        return cache[str(example['id'])]['responses'][idx]
+        return cache[str(example['id'])]['responses'][str(idx)]
     
     formatted_prompt = PROMPT.format(problem=example['problem'])
     logging.debug(f"Requesting response for problem starting with: {example['problem'][:50]} running {idx} of {N_SAMPLE} times.")
