@@ -81,11 +81,11 @@ def save_cache(cache, filename):
         json.dump(cache, f)
 
 def get_response(example: dict, cache: dict, idx: int = 0) -> dict:
-    if example['id'] not in cache:
+    if int(example['id']) not in cache and str(example['id']) not in cache:
         cache[example['id']] = {'problem': example['problem'], 'solution': example['solution'], 'answer': example['answer'], 'responses': {}}
-    elif idx in cache[example['id']]['responses']:
-        logging.debug(f"Cache hit for problem: {example['problem'][:50]}. idx: {idx}.")
-        return cache[example['id']]['responses'][idx]
+    elif idx in cache[str(example['id'])]['responses']:
+        logging.info(f"Cache hit for problem: {example['problem'][:50]}. idx: {idx}.")
+        return cache[str(example['id'])]['responses'][idx]
     
     formatted_prompt = PROMPT.format(problem=example['problem'])
     logging.debug(f"Requesting response for problem starting with: {example['problem'][:50]} running {idx} of {N_SAMPLE} times.")
@@ -134,7 +134,7 @@ def generate_single_response(example: dict, cache: dict, idx: int) -> tuple[int,
     answer = extract_answer(response, cache)
     if answer is None:
         logging.info(f"\nAnswer is None for problem: {example['problem']}, idx: {idx}, token used: {response['tokens']}.\n")
-        answer = 0
+        # answer = 0
     return answer, response['tokens']
 
 def generate_sampled_responses(example: dict, cache: dict) -> list[tuple[int, int]]:
@@ -186,7 +186,7 @@ def calculate_bucket_accuracy(dataset: list[dict], cache: dict):
 
             if bucket_responses:
                 random_response = bucket_responses[np.random.randint(0, len(bucket_responses))]
-                score = 1 if int(example['answer']) == random_response[0] else 0
+                score = 1 if random_response[0] is not None and int(example['answer']) == int(random_response[0]) else 0
                 results_by_bucket[bucket_idx].append(score)
             else:
                 num_missing_in_bucket[bucket_idx] += 1
@@ -196,7 +196,11 @@ def calculate_bucket_accuracy(dataset: list[dict], cache: dict):
     bucket_accuracies = {}
     for bucket, scores in results_by_bucket.items():
         accuracy = np.mean(scores) if scores else 0
-        bucket_accuracies[bucket] = accuracy
+        bucket_accuracies[bucket] = {
+            'boundary': (bucket_boundaries[bucket-1], bucket_boundaries[bucket]), 
+            'accuracy': accuracy, 
+            'num_missing': num_missing_in_bucket[bucket]
+        }
         logging.info(f"Bucket {bucket} ({bucket_boundaries[bucket-1]} - {bucket_boundaries[bucket]}): Accuracy {accuracy}")
 
     return bucket_accuracies
@@ -212,8 +216,34 @@ def main():
     with open(result_file, 'w') as f:
         json.dump(bucket_accuracies, f, indent=2)
 
-    logging.info(f"\n\nFinal bucket accuracies saved to {result_file}")
+    logging.info(f"\n\nFinal bucket accuracies saved to {result_file}\n\n")
     save_cache(cache, RESPONSE_CACHE_FILENAME)
+
+    # Plot token count vs. accuracy curve
+    try:
+        logging.info("Generating accuracy plot...")
+        boundaries = [bucket_accuracies[b]['boundary'] for b in bucket_accuracies]
+        accuracies = [bucket_accuracies[b]['accuracy'] for b in bucket_accuracies]
+        lower_bounds = [boundary[0] for boundary in boundaries]
+
+        # Plot
+        import matplotlib.pyplot as plt
+        plt.figure(figsize=(10, 6))
+        plt.plot(lower_bounds, accuracies, marker='o', linestyle='-', color='b', label='Accuracy')
+        plt.xscale('log', base=2)
+        plt.xlabel("Token Count (Lower Boundary)")
+        plt.ylabel("Accuracy")
+        plt.title(f"Token Count vs. Accuracy for {O1_MODEL}")
+        plt.grid(True)
+        plt.legend()
+
+        plot_file = os.path.join(run_output_dir, f"accuracy_plot.png")
+        plt.savefig(plot_file)
+        plt.close()
+
+        logging.info(f"Accuracy plot saved to {plot_file}\n\n")
+    except Exception as e:
+        logging.error(f"Error generating plot: {str(e)}\n\n")
 
 if __name__ == "__main__":
     main()

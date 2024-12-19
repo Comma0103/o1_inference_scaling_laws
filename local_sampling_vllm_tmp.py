@@ -7,6 +7,7 @@ import logging
 import torch
 from datasets import load_dataset
 from transformers import AutoModelForCausalLM, AutoTokenizer
+from vllm import LLM, SamplingParams
 from openai import OpenAI
 from tqdm import tqdm
 from IPython import embed
@@ -25,16 +26,7 @@ model_path_map = {
 
 # ================ config ====================
 # O1_MODEL = "o1-mini"
-O1_MODEL = "Qwen2.5-32B-Instruct"
-model = AutoModelForCausalLM.from_pretrained(
-    model_path_map[O1_MODEL],
-    torch_dtype=torch.bfloat16,
-    load_in_8bit=False,
-    low_cpu_mem_usage=True,
-    device_map="auto",
-)
-model.eval()
-tokenizer = AutoTokenizer.from_pretrained(model_path_map[O1_MODEL])
+O1_MODEL = "QwQ-32B-Preview"
 PROMPT = """You are a math problem solver. I will give you a problem from the American Invitational Mathematics Examination (AIME). At the end, provide the final answer as a single integer.
 
 Important: You should try your best to use various numbers of total tokens in your reasoning steps.
@@ -47,18 +39,22 @@ Here's the problem:
 Think step by step to solve this problem, use various numbers of total tokens in your reasoning, and provide the final answer with "the answer is (X)" where X is a single integer.
 """
 TEMPERATURE = 0.8
-MAX_NEW_TOKENS = 32768
+MAX_MODEL_TOKENS = 32768
+MAX_NEW_TOKENS = 32768 - 2048
+GPU_UTIL = 0.9
 N_SAMPLE = 200
 N_BUCKET = 10
+N_SAMPLES_PER_PROBLEM = 10
 
 MAX_WORKERS = 1
-MAX_WORKERS_SINGLE = 1
 # ================ config ====================
+
 
 SAVE_DIR = f'results'
 timestamp = time.time()
 time_str = time.strftime('%m-%d_%H-%M', time.localtime(timestamp))
 run_output_dir = f'{SAVE_DIR}/{O1_MODEL}/AIME/sampling/{time_str}'
+run_output_dir = '/home/shaohanh/qilongma/blob/inf_scal_law/results/QwQ-32B-Preview/AIME/sampling/12-17_03-26_copy'
 os.makedirs(run_output_dir, exist_ok=True)
 
 RESPONSE_CACHE_FILENAME = f'{run_output_dir}/response_cache.json'
@@ -69,6 +65,27 @@ logging.basicConfig(
         logging.StreamHandler(sys.stdout)
     ]
 )
+
+
+def load_model():
+    llm = LLM(
+        model=model_path_map[O1_MODEL], gpu_memory_utilization=float(GPU_UTIL),
+        tensor_parallel_size=torch.cuda.device_count(),
+        max_model_len=MAX_MODEL_TOKENS,
+        trust_remote_code=True
+    )
+    logging.info(f"Load model {model_path_map[O1_MODEL]} complete!")
+    tokenizer = AutoTokenizer.from_pretrained(model_path_map[O1_MODEL], trust_remote_code=True)
+    logging.info(f"Load tokenizer complete!")
+    sampling_params = SamplingParams(
+        temperature=TEMPERATURE, max_tokens=MAX_NEW_TOKENS,
+        stop_token_ids=[
+            tokenizer.eos_token_id, 
+            tokenizer.convert_tokens_to_ids("<|end_of_text|>"),
+            tokenizer.convert_tokens_to_ids("Question:")
+        ]
+    )
+    return (llm, sampling_params), tokenizer
 
 def load_2024_dataset() -> list[dict]:
     dataset_original = load_dataset("AI-MO/aimo-validation-aime")
@@ -87,32 +104,6 @@ def save_cache(cache, filename):
     with open(filename, 'w') as f:
         json.dump(cache, f)
 
-def get_response(example: dict, cache: dict, idx: int = 0) -> dict:
-    if int(example['id']) not in cache and str(example['id']) not in cache:
-        cache[example['id']] = {'problem': example['problem'], 'solution': example['solution'], 'answer': example['answer'], 'responses': {}}
-    elif idx in cache[str(example['id'])]['responses']:
-        logging.info(f"Cache hit for problem: {example['problem'][:50]}. idx: {idx}.")
-        return cache[str(example['id'])]['responses'][idx]
-    
-    formatted_prompt = PROMPT.format(problem=example['problem'])
-    prompt_len = len(formatted_prompt)
-    logging.debug(f"Requesting response for problem starting with: {example['problem'][:50]} running {idx} of {N_SAMPLE} times.")
-    # response = OPENAI_CLIENT.call(formatted_prompt, max_tokens=None, temperature=TEMPERATURE, return_completion=True)
-    input_ids = tokenizer(formatted_prompt, return_tensors="pt").input_ids.to(model.device)
-    input_token_num = input_ids.shape[1]
-    # print('input_ids:', input_ids.shape, input_ids, "\n\n\n") # torch.Size([1, n])
-    response_ids = model.generate(input_ids, do_sample=True, temperature=TEMPERATURE, max_new_tokens=MAX_NEW_TOKENS)
-    # print('response_ids:', response_ids.shape, response_ids, "\n\n\n") # torch.Size([1, n+m])
-    response = tokenizer.decode(response_ids[0], skip_special_tokens=True)
-    # print('response:', response, "\n\n\n") # prompt + response
-    # exit()
-    result = {
-        'content': response[prompt_len:],
-        'tokens': response_ids.shape[1] - input_token_num
-    }
-    cache[example['id']]['responses'][idx] = result
-    logging.info(f"Received {result['tokens']} tokens as response for problem starting with: {example['problem'][:50]}, idx: {idx}.")
-    return result
 
 def extract_answer(response: dict, cache: dict) -> int:
     if 'answer_pred' in response:
@@ -130,7 +121,6 @@ def extract_answer(response: dict, cache: dict) -> int:
         extracted_answer = extract_again(response['content'])
     
     answer_pred = int(extracted_answer) if extracted_answer else None
-    response['answer_pred'] = answer_pred
     return answer_pred
 
 def extract_again(text):
@@ -145,41 +135,61 @@ def extract_final(text):
     match = re.search(pattern, text, re.DOTALL)
     return match.group(0) if match else None
 
-def generate_single_response(example: dict, cache: dict, idx: int) -> tuple[int, int]:
-    response = get_response(example, cache, idx=idx)
-    answer = extract_answer(response, cache)
-    if answer is None:
-        logging.info(f"\nAnswer is None for problem: {example['problem']}, idx: {idx}, token used: {response['tokens']}.\n")
-        # answer = 0
-    return answer, response['tokens']
 
-def generate_sampled_responses(example: dict, cache: dict) -> list[tuple[int, int]]:
-    responses = []
+def batch_inference(llm, sampling_params, inference_batch, cache, example_id):
+    start = time.time()
+    outputs = llm.generate(inference_batch, sampling_params)
+    logging.info("Inference batch, size: " + str(len(inference_batch)) + ", costing time: " + str(time.time() - start))
+    results_batch = []
+    for idx, output in enumerate(outputs):
+        generated_text = output.outputs[0].text
+        tokens = len(output.outputs[0].token_ids)
+        response = {
+            'content': generated_text,
+            'tokens': tokens
+        }
+        cache[example_id]['responses'][idx] = response
+        logging.debug(f"Received {response['tokens']} tokens as response, idx: {idx}.")
+        answer_pred = extract_answer(response, cache)
+        response['answer_pred'] = answer_pred
+        if answer_pred is None:
+            logging.info(f"\nAnswer is None for idx: {idx}, token used: {response['tokens']}.\n")
+        results_batch.append((answer_pred, tokens))
+    return results_batch
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS_SINGLE) as executor:
-        futures = [executor.submit(generate_single_response, example, cache, idx) for idx in range(N_SAMPLE)]
+def generate_sampled_responses(example: dict, model, tokenizer, cache: dict) -> list[tuple[int, int]]:
+    if int(example['id']) not in cache and str(example['id']) not in cache:
+        cache[example['id']] = {'problem': example['problem'], 'solution': example['solution'], 'answer': example['answer'], 'responses': {}}
+    elif len(cache[str(example['id'])]['responses']) >= N_SAMPLE:
+        logging.info(f"Cache hit for problem: {example['problem'][:50]}.")
+        return [(resp['answer_pred'], resp['tokens']) for resp in cache[str(example['id'])]['responses'].values()]
 
-        for future in concurrent.futures.as_completed(futures):
-            try:
-                answer, tokens = future.result()
-                responses.append((answer, tokens))
-            except Exception as e:
-                logging.exception(f"Error processing result: {e}.")
+    llm, sampling_params = model
+    inference_batch = []
+
+    logging.info("generating prompts for: " + example['problem'][:50] + "\n")
+    for idx in tqdm(range(N_SAMPLE), ncols=75):
+        formatted_prompt = PROMPT.format(problem=example['problem'])
+        inference_batch.append(formatted_prompt)
     
-    logging.info(f"\n\nObtained answers for problem starting with: {example['problem'][:50]}.\n"
+    logging.info("evaluating: " + example['problem'][:50])
+    responses = batch_inference(llm, sampling_params, inference_batch, cache, example['id'])
+    logging.info("\n")
+    
+    logging.info(f"Obtained answers for problem starting with: {example['problem'][:50]}.\n"
                   f"Correct answer: {example['answer']}.\n"
                   f"Obtained answers (with tokens used): {responses}.\n\n")
     save_cache(cache, RESPONSE_CACHE_FILENAME)
 
     return responses
 
-def calculate_bucket_accuracy(dataset: list[dict], cache: dict):
+def calculate_bucket_accuracy(dataset: list[dict], model, tokenizer, cache: dict):
 
     # Gather all token counts from sampled responses
     all_token_counts = []
     logging.info(f"Sampling responses for {len(dataset)} problems.\n\n")
     with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        futures = [executor.submit(generate_sampled_responses, example, cache) for example in dataset]
+        futures = [executor.submit(generate_sampled_responses, example, model, tokenizer, cache) for example in dataset]
         for future in concurrent.futures.as_completed(futures):
             sampled_responses = future.result()
             all_token_counts.extend([tokens for _, tokens in sampled_responses])
@@ -195,16 +205,25 @@ def calculate_bucket_accuracy(dataset: list[dict], cache: dict):
     logging.info(f"Assigning responses to buckets and calculating accuracy.")
     num_missing_in_bucket = {i: 0 for i in range(1, N_BUCKET + 1)}
     for example in tqdm(dataset, ncols=75):
-        sampled_responses = generate_sampled_responses(example, cache)
+        sampled_responses = generate_sampled_responses(example, model, tokenizer, cache)
         for idx, boundary in enumerate(bucket_boundaries[:-1]):
             bucket_idx = idx + 1
             bucket_responses = [resp for resp in sampled_responses 
                                 if bucket_boundaries[idx] <= resp[1] < bucket_boundaries[bucket_idx]]
 
             if bucket_responses:
-                random_response = bucket_responses[np.random.randint(0, len(bucket_responses))]
-                score = 1 if random_response[0] is not None and int(example['answer']) == int(random_response[0]) else 0
-                results_by_bucket[bucket_idx].append(score)
+                # random_response = bucket_responses[np.random.randint(0, len(bucket_responses))]
+                # score = 1 if random_response[0] is not None and int(example['answer']) == int(random_response[0]) else 0
+                # results_by_bucket[bucket_idx].append(score)
+                sample_count = min(len(bucket_responses), N_SAMPLES_PER_PROBLEM)
+                sampled_idx = np.random.choice(len(bucket_responses), size=sample_count, replace=False)
+                sampled_responses = [bucket_responses[i] for i in sampled_idx]
+                scores = [
+                    1 if response[0] is not None and int(example['answer']) == int(response[0]) else 0
+                    for response in sampled_responses
+                ]
+                average_score = np.mean(scores)
+                results_by_bucket[bucket_idx].append(average_score)
             else:
                 num_missing_in_bucket[bucket_idx] += 1
     logging.info(f"Number of missing responses in each bucket: {num_missing_in_bucket}\n\n")
@@ -225,8 +244,10 @@ def calculate_bucket_accuracy(dataset: list[dict], cache: dict):
 # Main processing
 def main():
     cache = get_or_create_cache(RESPONSE_CACHE_FILENAME)
+    # model, tokenizer = load_model()
+    model, tokenizer = (None, None), None
     dataset = load_2024_dataset()
-    bucket_accuracies = calculate_bucket_accuracy(dataset, cache)
+    bucket_accuracies = calculate_bucket_accuracy(dataset, model, tokenizer, cache)
 
     # Save final results
     result_file = os.path.join(run_output_dir, "bucket_accuracies.json")
@@ -254,7 +275,7 @@ def main():
         plt.grid(True)
         plt.legend()
 
-        plot_file = os.path.join(run_output_dir, f"accuracy_plot.png")
+        plot_file = os.path.join(run_output_dir, f"accuracy_plot_{N_SAMPLES_PER_PROBLEM}.png")
         plt.savefig(plot_file)
         plt.close()
 

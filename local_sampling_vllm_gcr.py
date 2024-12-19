@@ -156,11 +156,11 @@ def batch_inference(llm, sampling_params, inference_batch, cache, example_id):
     return results_batch
 
 def generate_sampled_responses(example: dict, model, tokenizer, cache: dict) -> list[tuple[int, int]]:
-    if example['id'] not in cache:
+    if int(example['id']) not in cache and str(example['id']) not in cache:
         cache[example['id']] = {'problem': example['problem'], 'solution': example['solution'], 'answer': example['answer'], 'responses': {}}
-    elif len(cache[example['id']]['responses']) >= N_SAMPLE:
-        logging.debug(f"Cache hit for problem: {example['problem'][:50]}.")
-        return [(resp['answer_pred'], resp['tokens']) for resp in cache[example['id']]['responses'].values()]
+    elif len(cache[str(example['id'])]['responses']) >= N_SAMPLE:
+        logging.info(f"Cache hit for problem: {example['problem'][:50]}.")
+        return [(resp['answer_pred'], resp['tokens']) for resp in cache[str(example['id'])]['responses'].values()]
 
     llm, sampling_params = model
     inference_batch = []
@@ -221,7 +221,11 @@ def calculate_bucket_accuracy(dataset: list[dict], model, tokenizer, cache: dict
     bucket_accuracies = {}
     for bucket, scores in results_by_bucket.items():
         accuracy = np.mean(scores) if scores else 0
-        bucket_accuracies[bucket] = accuracy
+        bucket_accuracies[bucket] = {
+            'boundary': (bucket_boundaries[bucket-1], bucket_boundaries[bucket]), 
+            'accuracy': accuracy, 
+            'num_missing': num_missing_in_bucket[bucket]
+        }
         logging.info(f"Bucket {bucket} ({bucket_boundaries[bucket-1]} - {bucket_boundaries[bucket]}): Accuracy {accuracy}")
 
     return bucket_accuracies
@@ -238,8 +242,34 @@ def main():
     with open(result_file, 'w') as f:
         json.dump(bucket_accuracies, f, indent=2)
 
-    logging.info(f"\n\nFinal bucket accuracies saved to {result_file}")
+    logging.info(f"\n\nFinal bucket accuracies saved to {result_file}\n\n")
     save_cache(cache, RESPONSE_CACHE_FILENAME)
+
+    # Plot token count vs. accuracy curve
+    try:
+        logging.info("Generating accuracy plot...")
+        boundaries = [bucket_accuracies[b]['boundary'] for b in bucket_accuracies]
+        accuracies = [bucket_accuracies[b]['accuracy'] for b in bucket_accuracies]
+        lower_bounds = [boundary[0] for boundary in boundaries]
+
+        # Plot
+        import matplotlib.pyplot as plt
+        plt.figure(figsize=(10, 6))
+        plt.plot(lower_bounds, accuracies, marker='o', linestyle='-', color='b', label='Accuracy')
+        plt.xscale('log', base=2)
+        plt.xlabel("Token Count (Lower Boundary)")
+        plt.ylabel("Accuracy")
+        plt.title(f"Token Count vs. Accuracy for {O1_MODEL}")
+        plt.grid(True)
+        plt.legend()
+
+        plot_file = os.path.join(run_output_dir, "accuracy_plot.png")
+        plt.savefig(plot_file)
+        plt.close()
+
+        logging.info(f"Accuracy plot saved to {plot_file}\n\n")
+    except Exception as e:
+        logging.error(f"Error generating plot: {str(e)}\n\n")
 
 if __name__ == "__main__":
     main()
