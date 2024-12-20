@@ -170,7 +170,7 @@ def calculate_bucket_accuracy(dataset: list[dict], cache: dict):
 
     # Calculate bucket boundaries
     logging.info(f"Calculating bucket boundaries.")
-    bucket_boundaries = np.percentile(all_token_counts, np.linspace(0, 100, N_BUCKET + 1))
+    bucket_boundaries = [round(e) for e in np.percentile(all_token_counts, np.linspace(0, 100, N_BUCKET + 1))]
     logging.info(f"Bucket boundaries: {bucket_boundaries}\n\n")
 
     # Assign responses to buckets and calculate accuracy

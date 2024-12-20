@@ -196,7 +196,7 @@ def calculate_bucket_accuracy(dataset: list[dict], model, tokenizer, cache: dict
 
     # Calculate bucket boundaries
     logging.info(f"Calculating bucket boundaries.")
-    bucket_boundaries = np.percentile(all_token_counts, np.linspace(0, 100, N_BUCKET + 1))
+    bucket_boundaries = [round(e) for e in np.percentile(all_token_counts, np.linspace(0, 100, N_BUCKET + 1))]
     logging.info(f"Bucket boundaries: {bucket_boundaries}\n\n")
 
     # Assign responses to buckets and calculate accuracy
@@ -211,15 +211,17 @@ def calculate_bucket_accuracy(dataset: list[dict], model, tokenizer, cache: dict
                                 if bucket_boundaries[idx] <= resp[1] < bucket_boundaries[bucket_idx]]
 
             if bucket_responses:
+                ## choose one response in the bucket
                 # random_response = bucket_responses[np.random.randint(0, len(bucket_responses))]
                 # score = 1 if random_response[0] is not None and int(example['answer']) == int(random_response[0]) else 0
                 # results_by_bucket[bucket_idx].append(score)
-                sample_count = min(len(bucket_responses), N_SAMPLES_PER_PROBLEM)
-                sampled_idx = np.random.choice(len(bucket_responses), size=sample_count, replace=False)
-                sampled_responses = [bucket_responses[i] for i in sampled_idx]
+                ## choose multiple then average
+                resample_count = min(len(bucket_responses), N_SAMPLES_PER_PROBLEM)
+                resampled_idx = np.random.choice(len(bucket_responses), size=resample_count, replace=False)
+                resampled_responses = [bucket_responses[i] for i in resampled_idx]
                 scores = [
                     1 if response[0] is not None and int(example['answer']) == int(response[0]) else 0
-                    for response in sampled_responses
+                    for response in resampled_responses
                 ]
                 average_score = np.mean(scores)
                 results_by_bucket[bucket_idx].append(average_score)

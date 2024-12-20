@@ -26,7 +26,7 @@ model_path_map = {
 
 # ================ config ====================
 # O1_MODEL = "o1-mini"
-O1_MODEL = "QwQ-32B-Preview"
+O1_MODEL = "Qwen2.5-32B-Instruct"
 PROMPT = """You are a math problem solver. I will give you a problem from the American Invitational Mathematics Examination (AIME). At the end, provide the final answer as a single integer.
 
 Important: You should try your best to use various numbers of total tokens in your reasoning steps.
@@ -44,7 +44,7 @@ MAX_NEW_TOKENS = 32768 - 2048
 GPU_UTIL = 0.9
 N_SAMPLE = 200
 N_BUCKET = 10
-N_SAMPLES_PER_PROBLEM = 10
+N_SAMPLES_PER_PROBLEM = 20
 
 MAX_WORKERS = 1
 # ================ config ====================
@@ -54,7 +54,7 @@ SAVE_DIR = f'results'
 timestamp = time.time()
 time_str = time.strftime('%m-%d_%H-%M', time.localtime(timestamp))
 run_output_dir = f'{SAVE_DIR}/{O1_MODEL}/AIME/sampling/{time_str}'
-run_output_dir = '/home/shaohanh/qilongma/blob/inf_scal_law/results/QwQ-32B-Preview/AIME/sampling/12-17_03-26_copy'
+run_output_dir = '/home/shaohanh/qilongma/blob/inf_scal_law/results/Qwen2.5-32B-Instruct/AIME/sampling/12-17_03-33_copy'
 os.makedirs(run_output_dir, exist_ok=True)
 
 RESPONSE_CACHE_FILENAME = f'{run_output_dir}/response_cache.json'
@@ -197,7 +197,7 @@ def calculate_bucket_accuracy(dataset: list[dict], model, tokenizer, cache: dict
 
     # Calculate bucket boundaries
     logging.info(f"Calculating bucket boundaries.")
-    bucket_boundaries = np.percentile(all_token_counts, np.linspace(0, 100, N_BUCKET + 1))
+    bucket_boundaries = [round(e) for e in np.percentile(all_token_counts, np.linspace(0, 100, N_BUCKET + 1))]
     logging.info(f"Bucket boundaries: {bucket_boundaries}\n\n")
 
     # Assign responses to buckets and calculate accuracy
@@ -212,15 +212,17 @@ def calculate_bucket_accuracy(dataset: list[dict], model, tokenizer, cache: dict
                                 if bucket_boundaries[idx] <= resp[1] < bucket_boundaries[bucket_idx]]
 
             if bucket_responses:
+                ## choose one response in the bucket
                 # random_response = bucket_responses[np.random.randint(0, len(bucket_responses))]
                 # score = 1 if random_response[0] is not None and int(example['answer']) == int(random_response[0]) else 0
                 # results_by_bucket[bucket_idx].append(score)
-                sample_count = min(len(bucket_responses), N_SAMPLES_PER_PROBLEM)
-                sampled_idx = np.random.choice(len(bucket_responses), size=sample_count, replace=False)
-                sampled_responses = [bucket_responses[i] for i in sampled_idx]
+                ## choose multiple then average
+                resample_count = min(len(bucket_responses), N_SAMPLES_PER_PROBLEM)
+                resampled_idx = np.random.choice(len(bucket_responses), size=resample_count, replace=False)
+                resampled_responses = [bucket_responses[i] for i in resampled_idx]
                 scores = [
                     1 if response[0] is not None and int(example['answer']) == int(response[0]) else 0
-                    for response in sampled_responses
+                    for response in resampled_responses
                 ]
                 average_score = np.mean(scores)
                 results_by_bucket[bucket_idx].append(average_score)
@@ -268,7 +270,7 @@ def main():
         import matplotlib.pyplot as plt
         plt.figure(figsize=(10, 6))
         plt.plot(lower_bounds, accuracies, marker='o', linestyle='-', color='b', label='Accuracy')
-        plt.xscale('log', base=2)
+        # plt.xscale('log', base=2)
         plt.xlabel("Token Count (Lower Boundary)")
         plt.ylabel("Accuracy")
         plt.title(f"Token Count vs. Accuracy for {O1_MODEL}")
