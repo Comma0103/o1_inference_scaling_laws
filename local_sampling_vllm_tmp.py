@@ -270,7 +270,8 @@ def main():
         import matplotlib.pyplot as plt
         plt.figure(figsize=(10, 6))
         plt.plot(lower_bounds, accuracies, marker='o', linestyle='-', color='b', label='Accuracy')
-        # plt.xscale('log', base=2)
+        if 'QwQ' not in O1_MODEL:
+            plt.xscale('log', base=2)
         plt.xlabel("Token Count (Lower Boundary)")
         plt.ylabel("Accuracy")
         plt.title(f"Token Count vs. Accuracy for {O1_MODEL}")
