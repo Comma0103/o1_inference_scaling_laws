@@ -38,6 +38,7 @@ Here's the problem:
 
 Think step by step to solve this problem, use various numbers of total tokens in your reasoning, and provide the final answer with "the answer is (X)" where X is a single integer.
 """
+
 TEMPERATURE = 0.8
 N_SAMPLE = 200
 N_BUCKET = 10
@@ -89,7 +90,7 @@ def get_response(example: dict, cache: dict, idx: int = 0) -> dict:
     
     formatted_prompt = PROMPT.format(problem=example['problem'])
     logging.debug(f"Requesting response for problem starting with: {example['problem'][:50]} running {idx} of {N_SAMPLE} times.")
-    response = OPENAI_CLIENT.call(formatted_prompt, max_tokens=None, temperature=TEMPERATURE, return_completion=True)
+    response = OPENAI_CLIENT.call(content=formatted_prompt, max_tokens=None, temperature=TEMPERATURE, return_completion=True)
     result = {
         'content': response.choices[0].message.content,
         'tokens': response.usage.completion_tokens
@@ -153,6 +154,7 @@ def generate_sampled_responses(example: dict, cache: dict) -> list[tuple[int, in
     logging.info(f"\n\nObtained answers for problem starting with: {example['problem'][:50]}.\n"
                   f"Correct answer: {example['answer']}.\n"
                   f"Obtained answers (with tokens used): {responses}.\n\n")
+    save_cache(cache, RESPONSE_CACHE_FILENAME)
 
     return responses
 

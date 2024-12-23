@@ -137,7 +137,7 @@ def get_response(example: dict, token_limit: int, cache: dict, idx: int = 0, N: 
     #     model=O1_MODEL,
     #     messages=[{"role": "user", "content": formatted_prompt}]
     # )
-    response = OPENAI_CLIENT.call(formatted_prompt, max_tokens=token_limit, return_completion=True)
+    response = OPENAI_CLIENT.call(content=formatted_prompt, max_tokens=token_limit, return_completion=True)
     result = {
         'content': response.choices[0].message.content,
         'tokens': response.usage.completion_tokens
@@ -179,7 +179,7 @@ def get_response(example: dict, token_limit: int, cache: dict, idx: int = 0, N: 
 #     #     model=EXTRACT_MODEL,
 #     #     messages=[{"role": "user", "content": extraction_prompt}]
 #     # )
-#     extraction_response = OPENAI_EXTRACT_CLIENT.call(extraction_prompt, max_tokens=128, return_completion=True)
+#     extraction_response = OPENAI_EXTRACT_CLIENT.call(content=extraction_prompt, max_tokens=128, return_completion=True)
 #     extracted_answer = extraction_response.choices[0].message.content.strip()
 #     try:
 #         result = int(extracted_answer)
