@@ -7,3 +7,5 @@ results/
 __pycache__/
 
 call_gpt.py
+
+gcr_job/
