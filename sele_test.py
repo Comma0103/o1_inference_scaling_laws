@@ -31,13 +31,14 @@ def test_eight_components():
     submit_button = driver.find_element(by=By.CSS_SELECTOR, value="button")
 
     text_box.send_keys("Selenium")
+    driver.implicitly_wait(3)
     submit_button.click()
 
     message = driver.find_element(by=By.ID, value="message")
     value = message.text
     assert value == "Received!"
 
-    teardown(driver)
+    # teardown(driver)
 
 
 if __name__ == "__main__":
