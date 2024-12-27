@@ -4,6 +4,7 @@ import json
 import typing
 import time
 import logging
+import threading
 import torch
 from datasets import load_dataset
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -18,6 +19,7 @@ from PIL import Image
 import re
 import copy
 import sympy as sp
+import matplotlib.pyplot as plt
 
 from helpers.plot_helpers import plot_majority_vote_graph, plot_just_ask_nicely_graph
 
@@ -31,7 +33,7 @@ model_path_map = {
 
 # ================ config ====================
 # O1_MODEL = "o1-mini"
-O1_MODEL = "QwQ-32B-Preview"
+O1_MODEL = "Llama-3.1-8B-ft"
 CHAT_TEMPLATE_LLAMA = "{% if not add_generation_prompt is defined %}\n{% set add_generation_prompt = false %}\n{% endif %}\n{%- set ns = namespace(found=false) -%}\n{%- for message in messages -%}\n    {%- if message['role'] == 'system' -%}\n        {%- set ns.found = true -%}\n    {%- endif -%}\n{%- endfor -%}\n{{bos_token}}{%- if not ns.found -%}\n{{'Write a response that appropriately completes the request.\\n\\n'}}\n{%- endif %}\n{%- for message in messages %}\n    {%- if message['role'] == 'system' %}\n{{ message['content'] }}\n    {%- else %}\n        {%- if message['role'] == 'user' %}\n{{'### Instruction:\\n' + message['content'] + '\\n\\n'}}\n        {%- else %}\n{{'### Response:\\n' + message['content'] + '\\n\\n'}}\n        {%- endif %}\n    {%- endif %}\n{%- endfor %}\n{% if add_generation_prompt %}\n{{'### Response:'}}\n{% endif %}"
 CHAT_TEMPLATE_LLAMA_H = '''
     {% if not add_generation_prompt is defined %}\n
@@ -74,7 +76,7 @@ TOP_P = 0.9
 MAX_MODEL_TOKENS = 32768
 MAX_NEW_TOKENS = 32768 - 2048
 GPU_UTIL = 0.9
-N_SAMPLE = 200
+N_SAMPLE = 50
 N_BUCKET = 10
 N_SAMPLES_PER_PROBLEM = 10
 
@@ -97,6 +99,7 @@ logging.basicConfig(
     ]
 )
 
+cache_lock = threading.Lock()
 
 def load_model():
     llm = LLM(
@@ -152,27 +155,83 @@ def get_or_create_cache(filename: str) -> dict:
             return json.load(f)
     return {}
 
-def save_cache(cache, filename):
-    with open(filename, 'w') as f:
-        json.dump(cache, f)
+# def save_cache(cache, filename):
+#     with cache_lock:
+#         with open(filename, 'w') as f:
+#             json.dump(cache, f)
 
+def save_cache(cache, filename):
+    success = False
+    while not success:
+        try:
+            # 读取当前文件中的缓存
+            try:
+                with open(filename, 'r') as f:
+                    cache_tmp = json.load(f)
+            except FileNotFoundError:
+                cache_tmp = {}
+
+            # 检查当前缓存是否比新缓存更长
+            if len(cache_tmp) >= len(cache):
+                logging.info("The existing cache is newer or equally updated. Skipping write.")
+                return
+
+            # 写入新的缓存
+            with open(filename, 'w') as f:
+                json.dump(cache, f, indent=2)
+            logging.info(f"Cache saved to {filename}.")
+
+            success = True
+        except RuntimeError as e:
+            logging.warning(f"RuntimeError encountered: {e}. Retrying in 1 second...")
+            time.sleep(1)
+        except Exception as e:
+            logging.error(f"Unexpected error during save_cache: {e}")
+            raise
+
+
+# def extract_answer(response: dict, cache: dict) -> str:
+#     if 'answer_pred' in response:
+#         return response['answer_pred']
+
+#     pattern = r"\\boxed\{(.*?)\}" # r"\[ \\boxed\{(.*?)\} \\" # 提取最后一个 \boxed{...} 中的内容
+#     try:
+#         match = re.search(pattern, str(response['content']))
+#     except Exception as e:
+#         logging.debug(f"Error {str(e)} in extracting answer in response: " + response['content'])
+#     if match:
+#         extracted_answer = match.group(1).strip()
+#     else:
+#         logging.debug("1st answer extract failed in: \n" + response['content'])
+#         # extracted_answer = extract_again(response['content'])
+#         extracted_answer = None
+    
+#     answer_pred = extracted_answer if extracted_answer else None
+#     return answer_pred
 
 def extract_answer(response: dict, cache: dict) -> str:
     if 'answer_pred' in response:
         return response['answer_pred']
-
-    pattern = r"\[ \\boxed\{(.*?)\} \\" # 提取最后一个 \boxed{...} 中的内容
+    
+    # 捕获 \boxed{...}，考虑嵌套情况
+    pattern = r"\\boxed\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}"
+    
     try:
-        match = re.search(pattern, str(response['content']))
+        matches = re.findall(pattern, str(response['content']))
+        if matches:
+            extracted_answer = matches[-1].strip()  # 获取最后一个匹配项并去除空格
+        else:
+            extracted_answer = None
+            logging.debug("No matches found for pattern in content:\n" + response['content'])
     except Exception as e:
         logging.debug(f"Error {str(e)} in extracting answer in response: " + response['content'])
-    if match:
-        extracted_answer = match.group(1).strip()
-    else:
-        logging.debug("1st answer extract failed in: \n" + response['content'])
-        # extracted_answer = extract_again(response['content'])
         extracted_answer = None
-    
+
+    # 如果仍然无法提取，记录日志或尝试进一步处理（可选）
+    if not extracted_answer:
+        logging.debug("Answer extraction failed for response content:\n" + response['content'])
+
+    # 缓存提取结果
     answer_pred = extracted_answer if extracted_answer else None
     return answer_pred
 
@@ -215,7 +274,7 @@ def batch_inference(llm, tokenizer, sampling_params, inference_batch, cache, exa
         results_batch.append((answer_pred, tokens))
     return results_batch
 
-def generate_sampled_responses(example: dict, model, tokenizer, cache: dict) -> list[tuple[str, int]]:
+def generate_sampled_responses(example: dict, model, tokenizer, cache: dict, example_idx: int) -> list[tuple[str, int]]:
     if example['unique_id'] not in cache:
         cache[example['unique_id']] = {'problem': example['problem'], 'solution': example['solution'], 'answer': example['answer'], 'subject': example['subject'], 'level': example['level'], 'responses': {}}
     elif len(cache[example['unique_id']]['responses']) >= N_SAMPLE:
@@ -224,8 +283,9 @@ def generate_sampled_responses(example: dict, model, tokenizer, cache: dict) -> 
 
     llm, sampling_params = model
     inference_batch = []
+    local_cache = {example['unique_id']: cache.get(example['unique_id'], {})}
 
-    logging.info("generating prompts for: " + example['problem'][:50] + "\n")
+    logging.info(f"generating prompts for problem {example_idx+1}/500 starting with: " + example['problem'][:50] + "\n")
     if 'QwQ' in O1_MODEL or 'Qwen2.5' in O1_MODEL:
         messages = copy.deepcopy(MESSAGES_QWEN)
         messages[1]['content'] = example['problem']
@@ -238,14 +298,16 @@ def generate_sampled_responses(example: dict, model, tokenizer, cache: dict) -> 
         formatted_prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
         inference_batch.append(formatted_prompt)
     
-    logging.info("evaluating: " + example['problem'][:50])
-    responses = batch_inference(llm, tokenizer, sampling_params, inference_batch, cache, example['unique_id'], input_encoded=True)
+    logging.info(f"evaluating {example_idx+1}/500 starting with: " + example['problem'][:50])
+    responses = batch_inference(llm, tokenizer, sampling_params, inference_batch, local_cache, example['unique_id'], input_encoded=True)
     logging.info("\n")
     
     logging.info(f"Obtained answers for problem starting with: {example['problem'][:50]}.\n"
                   f"Correct answer: {example['answer']}.\n"
                   f"Obtained answers (with tokens used): {responses}.\n\n")
-    save_cache(cache, RESPONSE_CACHE_FILENAME)
+    with cache_lock:
+        cache.update(local_cache)
+        save_cache(cache, RESPONSE_CACHE_FILENAME)
 
     return responses
 
@@ -285,13 +347,14 @@ def calculate_bucket_accuracy(dataset: list[dict], model, tokenizer, cache: dict
 
     # Gather all token counts from sampled responses
     all_token_counts = []
-    logging.info(f"Sampling responses for {len(dataset)} problems.\n\n")
+    logging.info(f"Sampling responses {N_SAMPLE} times for each problem in {len(dataset)} problems.\n\n")
     with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        futures = [executor.submit(generate_sampled_responses, example, model, tokenizer, cache) for example in dataset]
+        futures = [executor.submit(generate_sampled_responses, example, model, tokenizer, cache, idx) for idx, example in enumerate(dataset)]
         for future in concurrent.futures.as_completed(futures):
             sampled_responses = future.result()
             all_token_counts.extend([tokens for _, tokens in sampled_responses])
-    save_cache(cache, RESPONSE_CACHE_FILENAME)
+    with cache_lock:
+        save_cache(cache, RESPONSE_CACHE_FILENAME)
 
     # Calculate bucket boundaries
     logging.info(f"Calculating bucket boundaries.")
@@ -302,8 +365,9 @@ def calculate_bucket_accuracy(dataset: list[dict], model, tokenizer, cache: dict
     results_by_bucket = {i: [] for i in range(1, N_BUCKET + 1)}
     logging.info(f"Assigning responses to buckets and calculating accuracy.")
     num_missing_in_bucket = {i: 0 for i in range(1, N_BUCKET + 1)}
+    example_idx = 0
     for example in tqdm(dataset, ncols=75):
-        sampled_responses = generate_sampled_responses(example, model, tokenizer, cache)
+        sampled_responses = generate_sampled_responses(example, model, tokenizer, cache, example_idx)
         for idx, boundary in enumerate(bucket_boundaries[:-1]):
             bucket_idx = idx + 1
             bucket_responses = [resp for resp in sampled_responses 
@@ -326,6 +390,7 @@ def calculate_bucket_accuracy(dataset: list[dict], model, tokenizer, cache: dict
                 results_by_bucket[bucket_idx].append(average_score)
             else:
                 num_missing_in_bucket[bucket_idx] += 1
+        example_idx += 1
     logging.info(f"Number of missing responses in each bucket: {num_missing_in_bucket}\n\n")
 
     # Calculate and log accuracy for each bucket
@@ -352,9 +417,9 @@ def main():
     result_file = os.path.join(run_output_dir, "bucket_accuracies.json")
     with open(result_file, 'w') as f:
         json.dump(bucket_accuracies, f, indent=2)
-
     logging.info(f"\n\nFinal bucket accuracies saved to {result_file}\n\n")
-    save_cache(cache, RESPONSE_CACHE_FILENAME)
+    with cache_lock:
+        save_cache(cache, RESPONSE_CACHE_FILENAME)
 
     # Plot token count vs. accuracy curve
     try:
@@ -364,7 +429,6 @@ def main():
         lower_bounds = [boundary[0] for boundary in boundaries]
 
         # Plot
-        import matplotlib.pyplot as plt
         plt.figure(figsize=(10, 6))
         plt.plot(lower_bounds, accuracies, marker='o', linestyle='-', color='b', label='Accuracy')
         plt.xscale('log', base=2)

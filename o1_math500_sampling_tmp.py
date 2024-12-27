@@ -5,10 +5,7 @@ import typing
 import time
 import logging
 import threading
-import torch
 from datasets import load_dataset
-from transformers import AutoModelForCausalLM, AutoTokenizer
-from vllm import LLM, SamplingParams
 from openai import OpenAI
 from tqdm import tqdm
 from IPython import embed
@@ -22,65 +19,42 @@ import sympy as sp
 import matplotlib.pyplot as plt
 
 from helpers.plot_helpers import plot_majority_vote_graph, plot_just_ask_nicely_graph
+from call_gpt import Openai, API_INFOS
 
-torch.backends.cudnn.deterministic = True
-
-model_path_map = {
-    "QwQ-32B-Preview": "/home/shaohanh/qilongma/blob/public_models/QwQ-32B-Preview",
-    "Qwen2.5-32B-Instruct": "/home/shaohanh/qilongma/blob/public_models/Qwen2.5-32B-Instruct",
-    "Llama-3.1-8B-ft": "/home/shaohanh/qilongma/blob/share/Llama-3.1-8B-ft-checkpoint-402",
+model_name_map = {
+    "gpt-4o": "OpenAI-GPT-4o",
+    "gpt-4o-mini": "OpenAI-GPT-4o-mini"
 }
 
 # ================ config ====================
 # O1_MODEL = "o1-mini"
-O1_MODEL = "QwQ-32B-Preview"
-CHAT_TEMPLATE_LLAMA = "{% if not add_generation_prompt is defined %}\n{% set add_generation_prompt = false %}\n{% endif %}\n{%- set ns = namespace(found=false) -%}\n{%- for message in messages -%}\n    {%- if message['role'] == 'system' -%}\n        {%- set ns.found = true -%}\n    {%- endif -%}\n{%- endfor -%}\n{{bos_token}}{%- if not ns.found -%}\n{{'Write a response that appropriately completes the request.\\n\\n'}}\n{%- endif %}\n{%- for message in messages %}\n    {%- if message['role'] == 'system' %}\n{{ message['content'] }}\n    {%- else %}\n        {%- if message['role'] == 'user' %}\n{{'### Instruction:\\n' + message['content'] + '\\n\\n'}}\n        {%- else %}\n{{'### Response:\\n' + message['content'] + '\\n\\n'}}\n        {%- endif %}\n    {%- endif %}\n{%- endfor %}\n{% if add_generation_prompt %}\n{{'### Response:'}}\n{% endif %}"
-CHAT_TEMPLATE_LLAMA_H = '''
-    {% if not add_generation_prompt is defined %}\n
-        {% set add_generation_prompt = false %}\n
-    {% endif %}\n
-    {%- set ns = namespace(found=false) -%}\n
-    {%- for message in messages -%}\n
-        {%- if message['role'] == 'system' -%}\n
-            {%- set ns.found = true -%}\n
-        {%- endif -%}\n
-    {%- endfor -%}\n
-    {{bos_token}}{%- if not ns.found -%}\n
-        {{'Write a response that appropriately completes the request.\\n\\n'}}\n
-    {%- endif %}\n
-    {%- for message in messages %}\n
-        {%- if message['role'] == 'system' %}\n
-            {{ message['content'] }}\n
-        {%- else %}\n
-            {%- if message['role'] == 'user' %}\n
-                {{'### Instruction:\\n' + message['content'] + '\\n\\n'}}\n
-            {%- else %}\n
-                {{'### Response:\\n' + message['content'] + '\\n\\n'}}\n
-            {%- endif %}\n
-        {%- endif %}\n
-    {%- endfor %}\n
-    {% if add_generation_prompt %}\n
-        {{'### Response:'}}\n
-    {% endif %}
-'''
-MESSAGES_LLAMA = [
+O1_MODEL = "gpt-4o-mini"
+# OPENAI_CLIENT = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+OPENAI_CLIENT = Openai(apis=API_INFOS[model_name_map[O1_MODEL]])
+MESSAGES_TEMPLATE = [
+    {"role": "system", "content": f"You are a helpful and harmless assistant. You are {O1_MODEL} developed by OpenAI. You should think step-by-step."},
     {"role": "user", "content": None}
 ]
-MESSAGES_QWEN = [
-    {"role": "system", "content": "You are a helpful and harmless assistant. You are Qwen developed by Alibaba. You should think step-by-step."},
-    {"role": "user", "content": None}
-]
+PROMPT = """You are a math problem solver. I will give you a problem from the MATH500 benchmark. At the end, provide the final answer in box.
+
+Important: You should try your best to use various numbers of total tokens in your reasoning steps.
+If you feel like you are finished too early, spend the extra tokens trying to double check your work until you are absolutely sure that you have the correct answer.
+
+Here's the problem:
+
+{problem}
+
+Think step by step to solve this problem, use various numbers of total tokens in your reasoning, and provide the final answer with "{box}" where X is the answer itself.
+"""
 
 TEMPERATURE = 0.8
 TOP_P = 0.9
-MAX_MODEL_TOKENS = 32768
-MAX_NEW_TOKENS = 32768 - 2048
-GPU_UTIL = 0.9
 N_SAMPLE = 200
 N_BUCKET = 10
 N_SAMPLES_PER_PROBLEM = 10
 
-MAX_WORKERS = 1
+MAX_WORKERS = 8
+MAX_WORKERS_SINGLE = 4
 # ================ config ====================
 
 
@@ -88,52 +62,20 @@ SAVE_DIR = f'results'
 timestamp = time.time()
 time_str = time.strftime('%m-%d_%H-%M', time.localtime(timestamp))
 run_output_dir = f'{SAVE_DIR}/{O1_MODEL}/MATH500/sampling/{time_str}'
+run_output_dir = '/home/shaohanh/qilongma/o1_inference_scaling_laws/results/gpt-4o/MATH500/sampling/12-23_04-36_copy'
 os.makedirs(run_output_dir, exist_ok=True)
 
 RESPONSE_CACHE_FILENAME = f'{run_output_dir}/response_cache.json'
 logging.basicConfig(
     level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler(f'{run_output_dir}/logfile.log'),
+        logging.FileHandler(f'{run_output_dir}/logfile_tmp.log'),
         logging.StreamHandler(sys.stdout)
     ]
 )
 
 cache_lock = threading.Lock()
 
-def load_model():
-    llm = LLM(
-        model=model_path_map[O1_MODEL], gpu_memory_utilization=float(GPU_UTIL),
-        tensor_parallel_size=torch.cuda.device_count(),
-        max_model_len=MAX_MODEL_TOKENS,
-        trust_remote_code=True
-    )
-    logging.info(f"Load model {model_path_map[O1_MODEL]} complete!")
-    if 'QwQ' in O1_MODEL or 'Qwen2.5' in O1_MODEL:
-        tokenizer = AutoTokenizer.from_pretrained(model_path_map[O1_MODEL], trust_remote_code=True)
-        logging.info(f"Load tokenizer complete!")
-        stop_token_ids = [
-            tokenizer.eos_token_id, 
-            tokenizer.convert_tokens_to_ids("<|end_of_text|>"),
-            tokenizer.convert_tokens_to_ids("Question:")
-        ]
-    elif 'Llama' in O1_MODEL:
-        tokenizer = llm.get_tokenizer()
-        logging.info(f"Load tokenizer complete!")
-        if tokenizer.chat_template is None:
-            tokenizer.chat_template = CHAT_TEMPLATE_LLAMA
-            stop_token_ids = [tokenizer.eos_token_id, tokenizer.convert_tokens_to_ids("<|eot_id|>")]
-            logging.info("tokenizer.chat_template is None, use pre-defined template")
-        else:
-            stop_token_ids = [tokenizer.eos_token_id, tokenizer.convert_tokens_to_ids("<|end_of_text|>")]
-            logging.info("use original template")
-    else:
-        raise ValueError(f"Unknown model: {O1_MODEL}")
-    sampling_params = SamplingParams(
-        temperature=TEMPERATURE, top_p=TOP_P, max_tokens=MAX_NEW_TOKENS,
-        stop_token_ids=stop_token_ids
-    )
-    return (llm, sampling_params), tokenizer
 
 def load_math500():
     datasets_path ='qq8933/MATH500'
@@ -189,6 +131,26 @@ def save_cache(cache, filename):
             logging.error(f"Unexpected error during save_cache: {e}")
             raise
 
+def get_response(example: dict, cache: dict, idx: int = 0) -> dict:
+    with cache_lock:
+        if example['unique_id'] not in cache:
+            cache[example['unique_id']] = {'problem': example['problem'], 'solution': example['solution'], 'answer': example['answer'], 'subject': example['subject'], 'level': example['level'], 'responses': {}}
+        elif str(idx) in cache[example['unique_id']]['responses']:
+            if idx == N_SAMPLE - 1:
+                logging.info(f"Cache hit for problem: {example['problem'][:50]}. idx: {idx}.")
+            return cache[example['unique_id']]['responses'][str(idx)]
+    
+    messages = copy.deepcopy(MESSAGES_TEMPLATE)
+    messages[1]['content'] = PROMPT.format(problem=example['problem'], box=r"\boxed{X}")
+    logging.debug(f"Requesting response for problem starting with: {example['problem'][:50]} running {idx} of {N_SAMPLE} times.")
+    response = OPENAI_CLIENT.call(messages=messages, max_tokens=None, temperature=TEMPERATURE, top_p=TOP_P, return_completion=True)
+    result = {
+        'content': response.choices[0].message.content,
+        'tokens': response.usage.completion_tokens
+    }
+    cache[example['unique_id']]['responses'][idx] = result
+    logging.debug(f"Received {result['tokens']} tokens for problem starting with: {example['problem'][:50]}.")
+    return result
 
 # def extract_answer(response: dict, cache: dict) -> str:
 #     if 'answer_pred' in response:
@@ -207,6 +169,7 @@ def save_cache(cache, filename):
 #         extracted_answer = None
     
 #     answer_pred = extracted_answer if extracted_answer else None
+#     response['answer_pred'] = answer_pred
 #     return answer_pred
 
 def extract_answer(response: dict, cache: dict) -> str:
@@ -233,6 +196,7 @@ def extract_answer(response: dict, cache: dict) -> str:
 
     # 缓存提取结果
     answer_pred = extracted_answer if extracted_answer else None
+    response['answer_pred'] = answer_pred
     return answer_pred
 
 # def extract_again(text):
@@ -247,61 +211,28 @@ def extract_answer(response: dict, cache: dict) -> str:
 #     match = re.search(pattern, text, re.DOTALL)
 #     return match.group(0) if match else None
 
+def generate_single_response(example: dict, cache: dict, idx: int) -> tuple[int, int]:
+    response = get_response(example, cache, idx=idx)
+    answer = extract_answer(response, cache)
+    if answer is None:
+        logging.info(f"\nAnswer is None for problem: {example['problem'][:50]}, idx: {idx}, token used: {response['tokens']}.\n")
+    return answer, response['tokens']
 
-def batch_inference(llm, tokenizer, sampling_params, inference_batch, cache, example_id, input_encoded=False):
-    start = time.time()
-    if not input_encoded:
-        outputs = llm.generate(inference_batch, sampling_params)
-    else:
-        encoded_inputs = tokenizer.batch_encode_plus(inference_batch, add_special_tokens=False)
-        input_ids = encoded_inputs['input_ids']
-        outputs = llm.generate(prompt_token_ids=input_ids, sampling_params=sampling_params)
-    logging.info("Inference batch, size: " + str(len(inference_batch)) + ", costing time: " + str(time.time() - start))
-    results_batch = []
-    for idx, output in enumerate(outputs):
-        generated_text = output.outputs[0].text
-        tokens = len(output.outputs[0].token_ids)
-        response = {
-            'content': generated_text,
-            'tokens': tokens
-        }
-        cache[example_id]['responses'][idx] = response
-        logging.debug(f"Received {response['tokens']} tokens as response, idx: {idx}.")
-        answer_pred = extract_answer(response, cache)
-        response['answer_pred'] = answer_pred
-        if answer_pred is None:
-            logging.info(f"\nAnswer is None for idx: {idx}, token used: {response['tokens']}.\n")
-        results_batch.append((answer_pred, tokens))
-    return results_batch
-
-def generate_sampled_responses(example: dict, model, tokenizer, cache: dict, example_idx: int) -> list[tuple[str, int]]:
-    if example['unique_id'] not in cache:
-        cache[example['unique_id']] = {'problem': example['problem'], 'solution': example['solution'], 'answer': example['answer'], 'subject': example['subject'], 'level': example['level'], 'responses': {}}
-    elif len(cache[example['unique_id']]['responses']) >= N_SAMPLE:
-        logging.info(f"Cache hit for problem: {example['problem'][:50]}.")
-        return [(resp['answer_pred'], resp['tokens']) for resp in cache[example['unique_id']]['responses'].values()]
-
-    llm, sampling_params = model
-    inference_batch = []
+def generate_sampled_responses(example: dict, cache: dict, example_idx: int) -> list[tuple[str, int]]:
+    responses = []
     local_cache = {example['unique_id']: cache.get(example['unique_id'], {})}
 
-    logging.info(f"generating prompts for problem {example_idx+1}/500 starting with: " + example['problem'][:50] + "\n")
-    if 'QwQ' in O1_MODEL or 'Qwen2.5' in O1_MODEL:
-        messages = copy.deepcopy(MESSAGES_QWEN)
-        messages[1]['content'] = example['problem']
-    elif 'Llama' in O1_MODEL:
-        messages = copy.deepcopy(MESSAGES_LLAMA)
-        messages[0]['content'] = example['problem']
-    else:
-        raise ValueError(f"Unknown model: {O1_MODEL}")
-    for idx in tqdm(range(N_SAMPLE), ncols=75):
-        formatted_prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-        inference_batch.append(formatted_prompt)
-    
-    logging.info(f"evaluating {example_idx+1}/500 starting with: " + example['problem'][:50])
-    responses = batch_inference(llm, tokenizer, sampling_params, inference_batch, local_cache, example['unique_id'], input_encoded=True)
-    logging.info("\n")
-    
+    logging.info(f"Sampling responses for problem {example_idx + 1}/500 starting with: {example['problem'][:50]}.\n")
+    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS_SINGLE) as executor:
+        futures = [executor.submit(generate_single_response, example, local_cache, idx) for idx in range(N_SAMPLE)]
+
+        for future in concurrent.futures.as_completed(futures):
+            try:
+                answer, tokens = future.result()
+                responses.append((answer, tokens))
+            except Exception as e:
+                logging.exception(f"Error processing result: {e}.")
+
     logging.info(f"Obtained answers for problem starting with: {example['problem'][:50]}.\n"
                   f"Correct answer: {example['answer']}.\n"
                   f"Obtained answers (with tokens used): {responses}.\n\n")
@@ -343,13 +274,13 @@ def is_answer_correct(answer, answer_pred):
     return answer == answer_pred
 
 
-def calculate_bucket_accuracy(dataset: list[dict], model, tokenizer, cache: dict):
+def calculate_bucket_accuracy(dataset: list[dict], cache: dict):
 
     # Gather all token counts from sampled responses
     all_token_counts = []
     logging.info(f"Sampling responses {N_SAMPLE} times for each problem in {len(dataset)} problems.\n\n")
     with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        futures = [executor.submit(generate_sampled_responses, example, model, tokenizer, cache, idx) for idx, example in enumerate(dataset)]
+        futures = [executor.submit(generate_sampled_responses, example, cache, idx) for idx, example in enumerate(dataset)]
         for future in concurrent.futures.as_completed(futures):
             sampled_responses = future.result()
             all_token_counts.extend([tokens for _, tokens in sampled_responses])
@@ -367,7 +298,7 @@ def calculate_bucket_accuracy(dataset: list[dict], model, tokenizer, cache: dict
     num_missing_in_bucket = {i: 0 for i in range(1, N_BUCKET + 1)}
     example_idx = 0
     for example in tqdm(dataset, ncols=75):
-        sampled_responses = generate_sampled_responses(example, model, tokenizer, cache, example_idx)
+        sampled_responses = generate_sampled_responses(example, cache, example_idx)
         for idx, boundary in enumerate(bucket_boundaries[:-1]):
             bucket_idx = idx + 1
             bucket_responses = [resp for resp in sampled_responses 
@@ -409,9 +340,8 @@ def calculate_bucket_accuracy(dataset: list[dict], model, tokenizer, cache: dict
 # Main processing
 def main():
     cache = get_or_create_cache(RESPONSE_CACHE_FILENAME)
-    model, tokenizer = load_model()
     dataset = load_math500()
-    bucket_accuracies = calculate_bucket_accuracy(dataset, model, tokenizer, cache)
+    bucket_accuracies = calculate_bucket_accuracy(dataset, cache)
 
     # Save final results
     result_file = os.path.join(run_output_dir, "bucket_accuracies.json")
@@ -431,7 +361,7 @@ def main():
         # Plot
         plt.figure(figsize=(10, 6))
         plt.plot(lower_bounds, accuracies, marker='o', linestyle='-', color='b', label='Accuracy')
-        plt.xscale('log', base=2)
+        # plt.xscale('log', base=2)
         plt.xlabel("Token Count (Lower Boundary)")
         plt.ylabel("Accuracy")
         plt.title(f"Token Count vs. Accuracy for {O1_MODEL}")

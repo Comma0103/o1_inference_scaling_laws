@@ -88,13 +88,14 @@ SAVE_DIR = f'results'
 timestamp = time.time()
 time_str = time.strftime('%m-%d_%H-%M', time.localtime(timestamp))
 run_output_dir = f'{SAVE_DIR}/{O1_MODEL}/MATH500/sampling/{time_str}'
+run_output_dir = '/home/shaohanh/qilongma/blob/inf_scal_law/results/QwQ-32B-Preview/MATH500/sampling/12-24_04-39_copy'
 os.makedirs(run_output_dir, exist_ok=True)
 
 RESPONSE_CACHE_FILENAME = f'{run_output_dir}/response_cache.json'
 logging.basicConfig(
     level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler(f'{run_output_dir}/logfile.log'),
+        logging.FileHandler(f'{run_output_dir}/logfile_tmp.log'),
         logging.StreamHandler(sys.stdout)
     ]
 )
@@ -409,7 +410,8 @@ def calculate_bucket_accuracy(dataset: list[dict], model, tokenizer, cache: dict
 # Main processing
 def main():
     cache = get_or_create_cache(RESPONSE_CACHE_FILENAME)
-    model, tokenizer = load_model()
+    # model, tokenizer = load_model()
+    model, tokenizer = (None, None), None
     dataset = load_math500()
     bucket_accuracies = calculate_bucket_accuracy(dataset, model, tokenizer, cache)
 
