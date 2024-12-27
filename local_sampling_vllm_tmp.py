@@ -187,7 +187,7 @@ def calculate_bucket_accuracy(dataset: list[dict], model, tokenizer, cache: dict
 
     # Gather all token counts from sampled responses
     all_token_counts = []
-    logging.info(f"Sampling responses for {len(dataset)} problems.\n\n")
+    logging.info(f"Sampling responses {N_SAMPLE} times for each problem in {len(dataset)} problems.\n\n")
     with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         futures = [executor.submit(generate_sampled_responses, example, model, tokenizer, cache) for example in dataset]
         for future in concurrent.futures.as_completed(futures):

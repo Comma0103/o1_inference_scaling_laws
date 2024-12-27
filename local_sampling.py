@@ -91,7 +91,8 @@ def get_response(example: dict, cache: dict, idx: int = 0) -> dict:
     if int(example['id']) not in cache and str(example['id']) not in cache:
         cache[example['id']] = {'problem': example['problem'], 'solution': example['solution'], 'answer': example['answer'], 'responses': {}}
     elif str(idx) in cache[str(example['id'])]['responses']:
-        logging.info(f"Cache hit for problem: {example['problem'][:50]}. idx: {idx}.")
+        if idx == N_SAMPLE - 1:
+            logging.info(f"Cache hit for problem: {example['problem'][:50]}. idx: {idx}.")
         return cache[str(example['id'])]['responses'][str(idx)]
     
     formatted_prompt = PROMPT.format(problem=example['problem'])
@@ -177,7 +178,7 @@ def calculate_bucket_accuracy(dataset: list[dict], cache: dict):
 
     # Gather all token counts from sampled responses
     all_token_counts = []
-    logging.info(f"Sampling responses for {len(dataset)} problems.\n\n")
+    logging.info(f"Sampling responses {N_SAMPLE} times for each problem in {len(dataset)} problems.\n\n")
     with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         futures = [executor.submit(generate_sampled_responses, example, cache) for example in dataset]
         for future in concurrent.futures.as_completed(futures):
