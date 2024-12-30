@@ -7,5 +7,6 @@ results/
 __pycache__/
 
 call_gpt.py
+call_gemini.py
 
 gcr_job/
