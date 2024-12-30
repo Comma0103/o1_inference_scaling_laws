@@ -133,7 +133,7 @@ def save_cache(cache, filename):
 
 def get_response(example: dict, cache: dict, idx: int = 0) -> dict:
     with cache_lock:
-        if example['unique_id'] not in cache:
+        if example['unique_id'] not in cache or not cache[example['unique_id']]:
             cache[example['unique_id']] = {'problem': example['problem'], 'solution': example['solution'], 'answer': example['answer'], 'subject': example['subject'], 'level': example['level'], 'responses': {}}
         elif str(idx) in cache[example['unique_id']]['responses']:
             if idx == N_SAMPLE - 1:
