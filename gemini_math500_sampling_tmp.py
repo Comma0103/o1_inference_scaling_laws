@@ -43,7 +43,7 @@ Think step by step to solve this problem, use various numbers of total tokens in
 
 TEMPERATURE = 0.8
 TOP_P = 0.9
-N_PROBLEM = 150
+N_PROBLEM = 50
 N_SAMPLE = 16
 N_BUCKET = 10
 N_SAMPLES_PER_PROBLEM = 10
@@ -57,13 +57,14 @@ SAVE_DIR = f'results'
 timestamp = time.time()
 time_str = time.strftime('%m-%d_%H-%M', time.localtime(timestamp))
 run_output_dir = f'{SAVE_DIR}/{GEMINI_MODEL}/MATH500/sampling/{time_str}'
+run_output_dir = '/home/shaohanh/qilongma/o1_inference_scaling_laws/results/gemini-2.0-flash-thinking-exp-1219/MATH500/sampling/12-30_11-20'
 os.makedirs(run_output_dir, exist_ok=True)
 
 RESPONSE_CACHE_FILENAME = f'{run_output_dir}/response_cache.json'
 logging.basicConfig(
     level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler(f'{run_output_dir}/logfile.log'),
+        logging.FileHandler(f'{run_output_dir}/logfile_tmp.log'),
         logging.StreamHandler(sys.stdout)
     ]
 )

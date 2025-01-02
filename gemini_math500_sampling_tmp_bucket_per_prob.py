@@ -43,7 +43,7 @@ Think step by step to solve this problem, use various numbers of total tokens in
 
 TEMPERATURE = 0.8
 TOP_P = 0.9
-N_PROBLEM = 150
+N_PROBLEM = 500
 N_SAMPLE = 16
 N_BUCKET = 10
 N_SAMPLES_PER_PROBLEM = 10
@@ -57,13 +57,16 @@ SAVE_DIR = f'results'
 timestamp = time.time()
 time_str = time.strftime('%m-%d_%H-%M', time.localtime(timestamp))
 run_output_dir = f'{SAVE_DIR}/{GEMINI_MODEL}/MATH500/sampling/{time_str}'
+run_output_dir = '/home/shaohanh/qilongma/o1_inference_scaling_laws/results/gemini-2.0-flash-thinking-exp-1219/MATH500/sampling/12-30_11-20'
 os.makedirs(run_output_dir, exist_ok=True)
+plot_dir = os.path.join(run_output_dir, 'acc_per_prob')
+os.makedirs(plot_dir, exist_ok=True)
 
 RESPONSE_CACHE_FILENAME = f'{run_output_dir}/response_cache.json'
 logging.basicConfig(
     level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler(f'{run_output_dir}/logfile.log'),
+        logging.FileHandler(f'{run_output_dir}/logfile_tmp.log'),
         logging.StreamHandler(sys.stdout)
     ]
 )
@@ -283,38 +286,42 @@ def calculate_bucket_accuracy(dataset: list[dict], cache: dict):
     dataset = [example for idx, example in enumerate(dataset) if idx < N_PROBLEM] # for testing
 
     # Gather all token counts from sampled responses
-    all_token_counts = []
+    all_token_counts = {}
     logging.info(f"Sampling responses {N_SAMPLE} times for each problem in {len(dataset)} problems.\n\n")
     with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        futures = [executor.submit(generate_sampled_responses, example, cache, idx) for idx, example in enumerate(dataset)]
-        for future in concurrent.futures.as_completed(futures):
+        future_to_example = {executor.submit(generate_sampled_responses, example, cache, idx): example for idx, example in enumerate(dataset)}
+        for future in concurrent.futures.as_completed(future_to_example):
+            example = future_to_example[future]
             sampled_responses = future.result()
-            all_token_counts.extend([tokens for _, tokens in sampled_responses])
+            all_token_counts[example['unique_id']] = [tokens for _, tokens in sampled_responses]
     with cache_lock:
         save_cache(cache, RESPONSE_CACHE_FILENAME)
 
     # Calculate bucket boundaries
-    logging.info(f"Calculating bucket boundaries.")
-    bucket_boundaries = [round(e) for e in np.percentile(all_token_counts, np.linspace(0, 100, N_BUCKET + 1))]
-    logging.info(f"Bucket boundaries: {bucket_boundaries}\n\n")
+    logging.info(f"Calculating bucket boundaries per problem.")
+    bucket_boundaries = {
+        example_id: [round(e) for e in np.percentile(prob_token_counts, np.linspace(0, 100, N_BUCKET + 1))] 
+        for example_id, prob_token_counts in all_token_counts.items()
+    }
+    logging.info(f"Bucket boundaries per problem calculated. First 10 examples: {list(bucket_boundaries.items())[:10]}.\n\n")
 
     # Assign responses to buckets and calculate accuracy
-    results_by_bucket = {i: [] for i in range(1, N_BUCKET + 1)}
+    results_by_bucket = {example['unique_id']: {i: 0.0 for i in range(1, N_BUCKET + 1)} for example in dataset}
     logging.info(f"Assigning responses to buckets and calculating accuracy.")
-    num_missing_in_bucket = {i: 0 for i in range(1, N_BUCKET + 1)}
+    num_missing_in_bucket = {example['unique_id']: {i: 0 for i in range(1, N_BUCKET + 1)} for example in dataset}
     example_idx = 0
     for example in tqdm(dataset, ncols=75):
         sampled_responses = generate_sampled_responses(example, cache, example_idx)
-        for idx, boundary in enumerate(bucket_boundaries[:-1]):
+        for idx, boundary in enumerate(bucket_boundaries[example['unique_id']][:-1]):
             bucket_idx = idx + 1
             bucket_responses = [resp for resp in sampled_responses 
-                                if bucket_boundaries[idx] <= resp[1] < bucket_boundaries[bucket_idx]]
+                                if bucket_boundaries[example['unique_id']][idx] <= resp[1] < bucket_boundaries[example['unique_id']][bucket_idx]]
 
             if bucket_responses:
                 ## choose one response in the bucket
                 # random_response = bucket_responses[np.random.randint(0, len(bucket_responses))]
                 # score = 1 if random_response[0] is not None and is_answer_correct(example['answer'], random_response[0]) else 0
-                # results_by_bucket[bucket_idx].append(score)
+                # results_by_bucket[example['unique_id']][bucket_idx] = score
                 ## choose multiple then average
                 resample_count = min(len(bucket_responses), N_SAMPLES_PER_PROBLEM)
                 resampled_idx = np.random.choice(len(bucket_responses), size=resample_count, replace=False)
@@ -324,22 +331,25 @@ def calculate_bucket_accuracy(dataset: list[dict], cache: dict):
                     for response in resampled_responses
                 ]
                 average_score = np.mean(scores)
-                results_by_bucket[bucket_idx].append(average_score)
+                results_by_bucket[example['unique_id']][bucket_idx] = average_score
             else:
-                num_missing_in_bucket[bucket_idx] += 1
+                num_missing_in_bucket[example['unique_id']][bucket_idx] += 1
         example_idx += 1
-    logging.info(f"Number of missing responses in each bucket: {num_missing_in_bucket}\n\n")
+    logging.info(f"Number of missing responses in each bucket for first 10 problems: {list(num_missing_in_bucket.items())[:10]}.\n\n")
 
     # Calculate and log accuracy for each bucket
-    bucket_accuracies = {}
-    for bucket, scores in results_by_bucket.items():
-        accuracy = np.mean(scores) if scores else 0
-        bucket_accuracies[bucket] = {
-            'boundary': (bucket_boundaries[bucket-1], bucket_boundaries[bucket]), 
-            'accuracy': accuracy, 
-            'num_missing': num_missing_in_bucket[bucket]
-        }
-        logging.info(f"Bucket {bucket} ({bucket_boundaries[bucket-1]} - {bucket_boundaries[bucket]}): Accuracy {accuracy}")
+    logging.info(f"Bucket accuracies per problem:\n")
+    bucket_accuracies = {example['unique_id']: {i: {} for i in range(1, N_BUCKET + 1)} for example in dataset}
+    for idx, (example_id, prob_results) in enumerate(results_by_bucket.items()):
+        logging.info(f"Problem {idx + 1}, {example_id}: {cache[example_id]['problem'][:100 if len(cache[example_id]['problem']) > 100 else -1]}")
+        for bucket, score in prob_results.items():
+            bucket_accuracies[example_id][bucket] = {
+                'boundary': (bucket_boundaries[example_id][bucket-1], bucket_boundaries[example_id][bucket]), 
+                'accuracy': score, 
+                'num_missing': num_missing_in_bucket[example_id][bucket]
+            }
+            logging.info(f"Bucket {bucket} ({bucket_boundaries[example_id][bucket-1]} - {bucket_boundaries[example_id][bucket]}): Accuracy {score}, Missing {num_missing_in_bucket[example_id][bucket]}")
+        logging.info("\n")
 
     return bucket_accuracies
 
@@ -358,29 +368,52 @@ def main():
         save_cache(cache, RESPONSE_CACHE_FILENAME)
 
     # Plot token count vs. accuracy curve
-    try:
-        logging.info("Generating accuracy plot...")
-        boundaries = [bucket_accuracies[b]['boundary'] for b in bucket_accuracies]
-        accuracies = [bucket_accuracies[b]['accuracy'] for b in bucket_accuracies]
-        lower_bounds = [boundary[0] for boundary in boundaries]
+    accuracies_all = []
+    for example_id, prob_accuracies in bucket_accuracies.items():
+        try:
+            logging.info("Generating accuracy plot for problem: " + cache[example_id]['problem'][:100 if len(cache[example_id]['problem']) > 100 else -1])
+            boundaries = [prob_accuracies[b]['boundary'] for b in prob_accuracies]
+            accuracies = [prob_accuracies[b]['accuracy'] for b in prob_accuracies]
+            accuracies_all.append(accuracies)
+            lower_bounds = [boundary[0] for boundary in boundaries]
 
-        # Plot
-        plt.figure(figsize=(10, 6))
-        plt.plot(lower_bounds, accuracies, marker='o', linestyle='-', color='b', label='Accuracy')
-        # plt.xscale('log', base=2)
-        plt.xlabel("Token Count (Lower Boundary)")
-        plt.ylabel("Accuracy")
-        plt.title(f"Token Count vs. Accuracy for {GEMINI_MODEL}")
-        plt.grid(True)
-        plt.legend()
+            # Plot
+            plt.figure(figsize=(10, 6))
+            plt.plot(lower_bounds, accuracies, marker='o', linestyle='-', color='b', label='Accuracy')
+            # plt.xscale('log', base=2)
+            plt.xlabel("Token Count (Lower Boundary)")
+            plt.ylabel("Accuracy")
+            plt.title(f"Token Count vs. Accuracy for {GEMINI_MODEL} on problem id: {example_id}")
+            plt.grid(True)
+            plt.legend()
 
-        plot_file = os.path.join(run_output_dir, f"accuracy_plot_{N_SAMPLES_PER_PROBLEM}.png")
-        plt.savefig(plot_file)
-        plt.close()
+            plot_file = os.path.join(plot_dir, f"accuracy_plot_{N_SAMPLES_PER_PROBLEM}_{example_id.replace('.json', '').replace('/', '_')}.png")
+            plt.savefig(plot_file)
+            plt.close()
 
-        logging.info(f"Accuracy plot saved to {plot_file}\n\n")
-    except Exception as e:
-        logging.error(f"Error generating plot: {str(e)}\n\n")
+            logging.info(f"Accuracy plot saved to {plot_file}\n")
+        except Exception as e:
+            logging.error(f"Error generating plot: {str(e)}\n")
+    
+    accuracies_all = np.array(accuracies_all)
+    bucket_mean_accuracies = np.mean(accuracies_all, axis=0)
+
+    # Plot
+    plt.figure(figsize=(10, 6))
+    plt.plot(range(1, N_BUCKET + 1), bucket_mean_accuracies, marker='o', linestyle='-', color='b', label='Bucket Mean Accuracy over all problems')
+    plt.xlabel("Bucket Index")
+    plt.ylabel("Mean Accuracy")
+    plt.title(f"Mean Accuracy over all problems for {GEMINI_MODEL}")
+    plt.grid(True)
+    plt.legend()
+
+    plot_file = os.path.join(plot_dir, f"bucket_mean_accuracy_plot_{N_SAMPLES_PER_PROBLEM}.png")
+    plt.savefig(plot_file)
+    plt.close()
+
+    logging.info(f"Mean accuracy plot saved to {plot_file}\n")
+
+    logging.info("All done.")
 
 if __name__ == "__main__":
     main()
