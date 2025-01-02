@@ -33,7 +33,7 @@ model_path_map = {
 
 # ================ config ====================
 # O1_MODEL = "o1-mini"
-O1_MODEL = "QwQ-32B-Preview"
+O1_MODEL = "Llama-3.1-8B-ft"
 CHAT_TEMPLATE_LLAMA = "{% if not add_generation_prompt is defined %}\n{% set add_generation_prompt = false %}\n{% endif %}\n{%- set ns = namespace(found=false) -%}\n{%- for message in messages -%}\n    {%- if message['role'] == 'system' -%}\n        {%- set ns.found = true -%}\n    {%- endif -%}\n{%- endfor -%}\n{{bos_token}}{%- if not ns.found -%}\n{{'Write a response that appropriately completes the request.\\n\\n'}}\n{%- endif %}\n{%- for message in messages %}\n    {%- if message['role'] == 'system' %}\n{{ message['content'] }}\n    {%- else %}\n        {%- if message['role'] == 'user' %}\n{{'### Instruction:\\n' + message['content'] + '\\n\\n'}}\n        {%- else %}\n{{'### Response:\\n' + message['content'] + '\\n\\n'}}\n        {%- endif %}\n    {%- endif %}\n{%- endfor %}\n{% if add_generation_prompt %}\n{{'### Response:'}}\n{% endif %}"
 CHAT_TEMPLATE_LLAMA_H = '''
     {% if not add_generation_prompt is defined %}\n
@@ -76,6 +76,7 @@ TOP_P = 0.9
 MAX_MODEL_TOKENS = 32768
 MAX_NEW_TOKENS = 32768 - 2048
 GPU_UTIL = 0.9
+N_PROBLEM = 50
 N_SAMPLE = 50
 N_BUCKET = 10
 N_SAMPLES_PER_PROBLEM = 10
@@ -88,7 +89,8 @@ SAVE_DIR = f'results'
 timestamp = time.time()
 time_str = time.strftime('%m-%d_%H-%M', time.localtime(timestamp))
 run_output_dir = f'{SAVE_DIR}/{O1_MODEL}/MATH500/sampling/{time_str}'
-run_output_dir = '/home/shaohanh/qilongma/o1_inference_scaling_laws/results/QwQ-32B-Preview/MATH500/sampling/12-24_04-39_copy'
+# run_output_dir = '/home/shaohanh/qilongma/o1_inference_scaling_laws/results/QwQ-32B-Preview/MATH500/sampling/12-24_04-39_copy'
+run_output_dir = '/home/shaohanh/qilongma/blob/inf_scal_law/results/Llama-3.1-8B-ft/MATH500/sampling/12-24_01-59'
 os.makedirs(run_output_dir, exist_ok=True)
 plot_dir = os.path.join(run_output_dir, 'acc_per_prob')
 os.makedirs(plot_dir, exist_ok=True)
@@ -174,8 +176,19 @@ def save_cache(cache, filename):
             except FileNotFoundError:
                 cache_tmp = {}
 
-            # 检查当前缓存是否比新缓存更长
-            if len(cache_tmp) >= len(cache):
+            # 检查当前缓存是否比新缓存更new
+            tmp_newer = True
+            for example_id, example_info in cache.items():
+                if not tmp_newer:
+                    break
+                if example_id not in cache_tmp:
+                    tmp_newer = False
+                    break
+                for idx, response in example_info['responses'].items():
+                    if idx not in cache_tmp[example_id]['responses']:
+                        tmp_newer = False
+                        break
+            if tmp_newer:
                 logging.info("The existing cache is newer or equally updated. Skipping write.")
                 return
 
@@ -348,7 +361,7 @@ def is_answer_correct(answer, answer_pred):
 
 def calculate_bucket_accuracy(dataset: list[dict], model, tokenizer, cache: dict):
     
-    # dataset = [example for idx, example in enumerate(dataset) if idx < 50] # for testing
+    dataset = [example for idx, example in enumerate(dataset) if idx < N_PROBLEM] # for testing
     
     # Gather all token counts from sampled responses
     all_token_counts = {}

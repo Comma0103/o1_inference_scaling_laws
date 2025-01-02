@@ -28,7 +28,7 @@ model_name_map = {
 
 # ================ config ====================
 # O1_MODEL = "o1-mini"
-O1_MODEL = "gpt-4o-mini"
+O1_MODEL = "gpt-4o"
 # OPENAI_CLIENT = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 OPENAI_CLIENT = Openai(apis=API_INFOS[model_name_map[O1_MODEL]])
 MESSAGES_TEMPLATE = [
@@ -49,7 +49,8 @@ Think step by step to solve this problem, use various numbers of total tokens in
 
 TEMPERATURE = 0.8
 TOP_P = 0.9
-N_SAMPLE = 200
+N_PROBLEM = 50
+N_SAMPLE = 50
 N_BUCKET = 10
 N_SAMPLES_PER_PROBLEM = 10
 
@@ -62,7 +63,7 @@ SAVE_DIR = f'results'
 timestamp = time.time()
 time_str = time.strftime('%m-%d_%H-%M', time.localtime(timestamp))
 run_output_dir = f'{SAVE_DIR}/{O1_MODEL}/MATH500/sampling/{time_str}'
-run_output_dir = '/home/shaohanh/qilongma/o1_inference_scaling_laws/results/gpt-4o-mini/MATH500/sampling/12-23_04-37_copy'
+run_output_dir = '/home/shaohanh/qilongma/o1_inference_scaling_laws/results/gpt-4o/MATH500/sampling/12-23_04-36_copy'
 os.makedirs(run_output_dir, exist_ok=True)
 plot_dir = os.path.join(run_output_dir, 'acc_per_prob')
 os.makedirs(plot_dir, exist_ok=True)
@@ -115,8 +116,19 @@ def save_cache(cache, filename):
             except FileNotFoundError:
                 cache_tmp = {}
 
-            # 检查当前缓存是否比新缓存更长
-            if len(cache_tmp) >= len(cache):
+            # 检查当前缓存是否比新缓存更new
+            tmp_newer = True
+            for example_id, example_info in cache.items():
+                if not tmp_newer:
+                    break
+                if example_id not in cache_tmp:
+                    tmp_newer = False
+                    break
+                for idx, response in example_info['responses'].items():
+                    if idx not in cache_tmp[example_id]['responses']:
+                        tmp_newer = False
+                        break
+            if tmp_newer:
                 logging.info("The existing cache is newer or equally updated. Skipping write.")
                 return
 
@@ -278,7 +290,7 @@ def is_answer_correct(answer, answer_pred):
 
 def calculate_bucket_accuracy(dataset: list[dict], cache: dict):
 
-    # dataset = [example for idx, example in enumerate(dataset) if idx < 50] # for testing
+    dataset = [example for idx, example in enumerate(dataset) if idx < N_PROBLEM] # for testing
     
     # Gather all token counts from sampled responses
     all_token_counts = {}
