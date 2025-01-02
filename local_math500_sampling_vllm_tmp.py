@@ -172,8 +172,19 @@ def save_cache(cache, filename):
             except FileNotFoundError:
                 cache_tmp = {}
 
-            # 检查当前缓存是否比新缓存更长
-            if len(cache_tmp) >= len(cache):
+            # 检查当前缓存是否比新缓存更new
+            tmp_newer = True
+            for example_id, example_info in cache.items():
+                if not tmp_newer:
+                    break
+                if example_id not in cache_tmp:
+                    tmp_newer = False
+                    break
+                for idx, response in example_info['responses'].items():
+                    if idx not in cache_tmp[example_id]['responses']:
+                        tmp_newer = False
+                        break
+            if tmp_newer:
                 logging.info("The existing cache is newer or equally updated. Skipping write.")
                 return
 
