@@ -270,7 +270,7 @@ def extract_answer(response: dict, cache: dict) -> int:
         logging.debug("Answer extraction failed for response content:\n" + response['content'])
 
     # 缓存提取结果
-    answer_pred = extracted_answer if int(extracted_answer) else None
+    answer_pred = int(extracted_answer) if extracted_answer else None
     # cache[cache_key] = answer_pred
     response['answer_pred'] = answer_pred
 
