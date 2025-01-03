@@ -4,6 +4,7 @@ import json
 import typing
 import time
 import logging
+import threading
 from datasets import load_dataset
 from openai import OpenAI
 from tqdm import tqdm
@@ -41,6 +42,8 @@ Think step by step to solve this problem, use around {token_limit} tokens in you
 """
 EXTRACT_MODEL = "gpt-4o-mini"
 OPENAI_EXTRACT_CLIENT = Openai(apis=API_INFOS[model_name_map[EXTRACT_MODEL]])
+TEMPERATURE = 0.8
+TOP_P = 0.9
 
 SHADE_REGIONS = True
 RUN_FULL_RANGE = False
@@ -63,6 +66,8 @@ logging.basicConfig(
         logging.StreamHandler(sys.stdout)
     ]
 )
+
+cache_lock = threading.Lock()
 
 
 def load_2024_dataset() -> list[dict]:
@@ -98,9 +103,50 @@ def get_or_create_cache(filename: str) -> dict[str, typing.Any]:
     return {}
 
 
+# def save_cache(cache, filename):
+#     with cache_lock:
+#         with open(filename, 'w') as f:
+#             json.dump(cache, f)
+
 def save_cache(cache, filename):
-    with open(filename, 'w') as f:
-        json.dump(cache, f)
+    success = False
+    while not success:
+        try:
+            # 读取当前文件中的缓存
+            try:
+                with open(filename, 'r') as f:
+                    cache_tmp = json.load(f)
+            except FileNotFoundError:
+                cache_tmp = {}
+
+            # 检查当前缓存是否比新缓存更new
+            tmp_newer = True
+            for example_id, example_info in cache.items():
+                if not tmp_newer:
+                    break
+                if example_id not in cache_tmp:
+                    tmp_newer = False
+                    break
+                for idx, response in example_info['responses'].items():
+                    if idx not in cache_tmp[example_id]['responses']:
+                        tmp_newer = False
+                        break
+            if tmp_newer:
+                logging.info("The existing cache is newer or equally updated. Skipping write.")
+                return
+
+            # 写入新的缓存
+            with open(filename, 'w') as f:
+                json.dump(cache, f, indent=2)
+            logging.info(f"Cache saved to {filename}.")
+
+            success = True
+        except RuntimeError as e:
+            logging.warning(f"RuntimeError encountered: {e}. Retrying in 1 second...")
+            time.sleep(1)
+        except Exception as e:
+            logging.error(f"Unexpected error during save_cache: {e}")
+            raise
 
 
 def get_response(example: dict, token_limit: int, cache: dict, idx: int = 0, N: int = 0) -> dict:
@@ -125,11 +171,12 @@ def get_response(example: dict, token_limit: int, cache: dict, idx: int = 0, N: 
     # if cache_key in cache:
     #     logging.debug(f"Cache hit for problem: {problem[:50]}. idx: {idx}. Requested tokens: {token_limit}.")
     #     return cache[cache_key]
-    if example['id'] not in cache:
-        cache[example['id']] = {'problem': example['problem'], 'solution': example['solution'], 'answer': example['answer'], 'responses': {}}
-    elif token_limit in cache[example['id']]['responses'] and idx in cache[example['id']]['responses'][token_limit]:
-        logging.debug(f"Cache hit for problem: {example['problem'][:50]}. idx: {idx}. Requested tokens: {token_limit}.")
-        return cache[example['id']]['responses'][token_limit][idx]
+    with cache_lock:
+        if str(example['id']) not in cache or not cache[str(example['id'])]:
+            cache[str(example['id'])] = {'problem': example['problem'], 'solution': example['solution'], 'answer': example['answer'], 'responses': {}}
+        elif str(token_limit) in cache[str(example['id'])]['responses'] and str(idx) in cache[str(example['id'])]['responses'][str(token_limit)]:
+            logging.debug(f"Cache hit for problem: {example['problem'][:50]}. idx: {idx}. Requested tokens: {token_limit}.")
+            return cache[str(example['id'])]['responses'][str(token_limit)][str(idx)]
     
     formatted_prompt = PROMPT.format(problem=example['problem'], token_limit=token_limit)
     logging.debug(f"Requesting {token_limit} tokens for problem starting with: {example['problem'][:50]} running {idx} of {N} times.")
@@ -137,15 +184,15 @@ def get_response(example: dict, token_limit: int, cache: dict, idx: int = 0, N: 
     #     model=O1_MODEL,
     #     messages=[{"role": "user", "content": formatted_prompt}]
     # )
-    response = OPENAI_CLIENT.call(content=formatted_prompt, max_tokens=token_limit, return_completion=True)
+    response = OPENAI_CLIENT.call(content=formatted_prompt, return_completion=True)
     result = {
         'content': response.choices[0].message.content,
         'tokens': response.usage.completion_tokens
     }
     # cache[cache_key] = result
-    if token_limit not in cache[example['id']]['responses']:
-        cache[example['id']]['responses'][token_limit] = {}
-    cache[example['id']]['responses'][token_limit][idx] = result
+    if str(token_limit) not in cache[str(example['id'])]['responses']:
+        cache[str(example['id'])]['responses'][str(token_limit)] = {}
+    cache[str(example['id'])]['responses'][str(token_limit)][str(idx)] = result
     logging.debug(f"Received {result['tokens']} tokens for problem starting with: {example['problem'][:50]}. Requested tokens: {token_limit}.")
     return result
 
@@ -204,22 +251,26 @@ def extract_answer(response: dict, cache: dict) -> int:
     # if cache_key in cache:
     #     return cache[cache_key]
     if 'answer_pred' in response:
-        return response['answer_pred']
+        return int(response['answer_pred'])
 
     pattern = r"[aA]nswer is \(?(\d+)\)?" # 在文本中找到以 answer is 开头，后面紧跟的一个正整数的字符串
     try:
-        match = re.search(pattern, str(response['content']))
+        matches = re.findall(pattern, str(response['content']))
+        if matches:
+            extracted_answer = matches[-1].strip()  # 获取最后一个匹配项并去除空格
+        else:
+            logging.debug("No matches found in 1st answer extract for pattern in content:\n" + response['content'])
+            extracted_answer = extract_again(response['content'])
     except Exception as e:
-        logging.debug(f"Error {str(e)} in extracting answer in response: " + str(response['content']))
-    if match:
-        extracted_answer = match.group(1)
-    else:
-        logging.info("1st answer extract failed in: \n" + str(response['content']))
-        extracted_answer = extract_again(response['content'])
-    if extracted_answer is not None:
-        answer_pred = int(extracted_answer)
-    else:
-        answer_pred = None
+        logging.debug(f"Error {str(e)} in extracting answer in response: " + response['content'])
+        extracted_answer = None
+
+    # 如果仍然无法提取，记录日志或尝试进一步处理（可选）
+    if not extracted_answer:
+        logging.debug("Answer extraction failed for response content:\n" + response['content'])
+
+    # 缓存提取结果
+    answer_pred = extracted_answer if extracted_answer else None
     # cache[cache_key] = answer_pred
     response['answer_pred'] = answer_pred
 
@@ -279,9 +330,11 @@ def process_single_example(example: dict, token_limit: int, cache: dict, N: int,
     answers = []
     tokens_list = []
     total_tokens = 0
+    local_cache = {str(example['id']): cache.get(str(example['id']), {})}
 
+    logging.info(f"Sampling responses for problem {example['id'] + 1}/30 starting with: {example['problem'][:50]}.\n")
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = [executor.submit(generate_single_response, example, token_limit, cache, idx, N) for idx in range(N)]
+        futures = [executor.submit(generate_single_response, example, token_limit, local_cache, idx, N) for idx in range(N)]
 
         for future in concurrent.futures.as_completed(futures):
             try:
@@ -296,6 +349,9 @@ def process_single_example(example: dict, token_limit: int, cache: dict, N: int,
     logging.info(f"Obtained answers for problem starting with: {example['problem'][:50]}.\n"
                   f"Correct answer: {example['answer']}.\n"
                   f"Obtained answers (with tokens used): {[(answer, tokens) for answer, tokens in zip(answers, tokens_list)]}.\n")
+    with cache_lock:
+        cache.update(local_cache)
+        save_cache(cache, RESPONSE_CACHE_FILENAME)
 
     # Compute majority vote
     majority_answers = statistics.multimode(answers)
@@ -338,7 +394,8 @@ def run_experiments(dataset: list[dict], cache: dict[str, typing.Any], token_lim
                 total_score += score
             actual_tokens_used.append(tokens)
         
-        save_cache(cache, RESPONSE_CACHE_FILENAME)
+        with cache_lock:
+            save_cache(cache, RESPONSE_CACHE_FILENAME)
     
     accuracy = total_score / len(dataset)
     avg_tokens_used = np.mean(actual_tokens_used)
