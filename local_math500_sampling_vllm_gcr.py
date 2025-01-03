@@ -29,11 +29,14 @@ model_path_map = {
     "QwQ-32B-Preview": "/mnt/qilongma/public_models/QwQ-32B-Preview",
     "Qwen2.5-32B-Instruct": "/mnt/qilongma/public_models/Qwen2.5-32B-Instruct",
     "Llama-3.1-8B-ft": "/mnt/qilongma/share/Llama-3.1-8B-ft-checkpoint-402",
+    "Llama-3.1-8B-qwq_math_sft-random": "/mnt/qilongma/share/sft_checkpoints/llama3.1_lora_4096_bsz8_reason_random",
+    "Llama-3.1-8B-qwq_math_sft-long": "/mnt/qilongma/share/sft_checkpoints/llama3.1_lora_4096_bsz8_reason_max",
+    "Llama-3.1-8B-qwq_math_sft-short": "/mnt/qilongma/share/sft_checkpoints/llama3.1_lora_4096_bsz8_reason_min",
 }
 
 # ================ config ====================
 # O1_MODEL = "o1-mini"
-O1_MODEL = "Llama-3.1-8B-ft"
+O1_MODEL = "Llama-3.1-8B-qwq_math_sft-short"
 CHAT_TEMPLATE_LLAMA = "{% if not add_generation_prompt is defined %}\n{% set add_generation_prompt = false %}\n{% endif %}\n{%- set ns = namespace(found=false) -%}\n{%- for message in messages -%}\n    {%- if message['role'] == 'system' -%}\n        {%- set ns.found = true -%}\n    {%- endif -%}\n{%- endfor -%}\n{{bos_token}}{%- if not ns.found -%}\n{{'Write a response that appropriately completes the request.\\n\\n'}}\n{%- endif %}\n{%- for message in messages %}\n    {%- if message['role'] == 'system' %}\n{{ message['content'] }}\n    {%- else %}\n        {%- if message['role'] == 'user' %}\n{{'### Instruction:\\n' + message['content'] + '\\n\\n'}}\n        {%- else %}\n{{'### Response:\\n' + message['content'] + '\\n\\n'}}\n        {%- endif %}\n    {%- endif %}\n{%- endfor %}\n{% if add_generation_prompt %}\n{{'### Response:'}}\n{% endif %}"
 CHAT_TEMPLATE_LLAMA_H = '''
     {% if not add_generation_prompt is defined %}\n
@@ -76,7 +79,8 @@ TOP_P = 0.9
 MAX_MODEL_TOKENS = 32768
 MAX_NEW_TOKENS = 32768 - 2048
 GPU_UTIL = 0.9
-N_SAMPLE = 50
+N_PROBLEM = 50
+N_SAMPLE = 32
 N_BUCKET = 10
 N_SAMPLES_PER_PROBLEM = 10
 
@@ -355,6 +359,8 @@ def is_answer_correct(answer, answer_pred):
 
 
 def calculate_bucket_accuracy(dataset: list[dict], model, tokenizer, cache: dict):
+
+    dataset = [example for idx, example in enumerate(dataset) if idx < N_PROBLEM] # for testing
 
     # Gather all token counts from sampled responses
     all_token_counts = []
