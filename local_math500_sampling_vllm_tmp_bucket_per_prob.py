@@ -29,11 +29,14 @@ model_path_map = {
     "QwQ-32B-Preview": "/home/shaohanh/qilongma/blob/public_models/QwQ-32B-Preview",
     "Qwen2.5-32B-Instruct": "/home/shaohanh/qilongma/blob/public_models/Qwen2.5-32B-Instruct",
     "Llama-3.1-8B-ft": "/home/shaohanh/qilongma/blob/share/Llama-3.1-8B-ft-checkpoint-402",
+    "Llama-3.1-8B-qwq_math_sft-random": "/home/shaohanh/qilongma/blob/share/sft_checkpoints/llama3.1_lora_4096_bsz8_reason_random",
+    "Llama-3.1-8B-qwq_math_sft-long": "/home/shaohanh/qilongma/blob/share/sft_checkpoints/llama3.1_lora_4096_bsz8_reason_max",
+    "Llama-3.1-8B-qwq_math_sft-short": "/home/shaohanh/qilongma/blob/share/sft_checkpoints/llama3.1_lora_4096_bsz8_reason_min",
 }
 
 # ================ config ====================
 # O1_MODEL = "o1-mini"
-O1_MODEL = "Llama-3.1-8B-ft"
+O1_MODEL = "Llama-3.1-8B-qwq_math_sft-short"
 CHAT_TEMPLATE_LLAMA = "{% if not add_generation_prompt is defined %}\n{% set add_generation_prompt = false %}\n{% endif %}\n{%- set ns = namespace(found=false) -%}\n{%- for message in messages -%}\n    {%- if message['role'] == 'system' -%}\n        {%- set ns.found = true -%}\n    {%- endif -%}\n{%- endfor -%}\n{{bos_token}}{%- if not ns.found -%}\n{{'Write a response that appropriately completes the request.\\n\\n'}}\n{%- endif %}\n{%- for message in messages %}\n    {%- if message['role'] == 'system' %}\n{{ message['content'] }}\n    {%- else %}\n        {%- if message['role'] == 'user' %}\n{{'### Instruction:\\n' + message['content'] + '\\n\\n'}}\n        {%- else %}\n{{'### Response:\\n' + message['content'] + '\\n\\n'}}\n        {%- endif %}\n    {%- endif %}\n{%- endfor %}\n{% if add_generation_prompt %}\n{{'### Response:'}}\n{% endif %}"
 CHAT_TEMPLATE_LLAMA_H = '''
     {% if not add_generation_prompt is defined %}\n
@@ -76,8 +79,8 @@ TOP_P = 0.9
 MAX_MODEL_TOKENS = 32768
 MAX_NEW_TOKENS = 32768 - 2048
 GPU_UTIL = 0.9
-N_PROBLEM = 50
-N_SAMPLE = 50
+N_PROBLEM = 250
+N_SAMPLE = 32
 N_BUCKET = 10
 N_SAMPLES_PER_PROBLEM = 10
 
@@ -90,7 +93,7 @@ timestamp = time.time()
 time_str = time.strftime('%m-%d_%H-%M', time.localtime(timestamp))
 run_output_dir = f'{SAVE_DIR}/{O1_MODEL}/MATH500/sampling/{time_str}'
 # run_output_dir = '/home/shaohanh/qilongma/o1_inference_scaling_laws/results/QwQ-32B-Preview/MATH500/sampling/12-24_04-39_copy'
-run_output_dir = '/home/shaohanh/qilongma/blob/inf_scal_law/results/Llama-3.1-8B-ft/MATH500/sampling/12-24_01-59'
+run_output_dir = '/home/shaohanh/qilongma/blob/inf_scal_law/results/Llama-3.1-8B-qwq_math_sft-short/MATH500/sampling/01-02_00-40'
 os.makedirs(run_output_dir, exist_ok=True)
 plot_dir = os.path.join(run_output_dir, 'acc_per_prob')
 os.makedirs(plot_dir, exist_ok=True)
