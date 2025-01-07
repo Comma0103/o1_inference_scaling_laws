@@ -43,10 +43,13 @@ Think step by step to solve this problem, use various numbers of total tokens in
 
 TEMPERATURE = 0.8
 TOP_P = 0.9
-N_PROBLEM = 50
+N_PROBLEM = 300
 N_SAMPLE = 16
 N_BUCKET = 10
-N_SAMPLES_PER_PROBLEM = 10
+N_SAMPLES_PER_PROBLEM = 1
+FIX_BUCKET_CDF = True
+if FIX_BUCKET_CDF:
+    BUCKET_STEP = 512
 
 MAX_WORKERS = 2
 MAX_WORKERS_SINGLE = 1
@@ -294,9 +297,14 @@ def calculate_bucket_accuracy(dataset: list[dict], cache: dict):
     with cache_lock:
         save_cache(cache, RESPONSE_CACHE_FILENAME)
 
-    # Calculate bucket boundaries
-    logging.info(f"Calculating bucket boundaries.")
-    bucket_boundaries = [round(e) for e in np.percentile(all_token_counts, np.linspace(0, 100, N_BUCKET + 1))]
+    if not FIX_BUCKET_CDF:
+        # Calculate bucket boundaries
+        logging.info(f"Calculating bucket boundaries.")
+        bucket_boundaries = [round(e) for e in np.percentile(all_token_counts, np.linspace(0, 100, N_BUCKET + 1))]
+    else:
+        # use fixed bucket boundaries
+        logging.info(f"Using fixed bucket boundaries.")
+        bucket_boundaries = [0] + [BUCKET_STEP*i for i in range(1, N_BUCKET)] + [max(all_token_counts)]
     logging.info(f"Bucket boundaries: {bucket_boundaries}\n\n")
 
     # Assign responses to buckets and calculate accuracy
@@ -325,7 +333,13 @@ def calculate_bucket_accuracy(dataset: list[dict], cache: dict):
                     for response in resampled_responses
                 ]
                 average_score = np.mean(scores)
-                results_by_bucket[bucket_idx].append(average_score)
+                if not FIX_BUCKET_CDF:
+                    results_by_bucket[bucket_idx].append(average_score)
+                else:
+                    for i in range(1, bucket_idx):
+                        results_by_bucket[i].append(0)
+                    for i in range(bucket_idx, N_BUCKET + 1):
+                        results_by_bucket[i].append(average_score)
             else:
                 num_missing_in_bucket[bucket_idx] += 1
         example_idx += 1
@@ -375,7 +389,7 @@ def main():
         plt.grid(True)
         plt.legend()
 
-        plot_file = os.path.join(run_output_dir, f"accuracy_plot_{N_SAMPLES_PER_PROBLEM}.png")
+        plot_file = os.path.join(run_output_dir, f"accuracy_plot{'_fix_bucket_cdf' if FIX_BUCKET_CDF else ''}_{N_SAMPLES_PER_PROBLEM}.png")
         plt.savefig(plot_file)
         plt.close()
 

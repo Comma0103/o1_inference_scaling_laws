@@ -29,11 +29,14 @@ model_path_map = {
     "QwQ-32B-Preview": "/home/shaohanh/qilongma/blob/public_models/QwQ-32B-Preview",
     "Qwen2.5-32B-Instruct": "/home/shaohanh/qilongma/blob/public_models/Qwen2.5-32B-Instruct",
     "Llama-3.1-8B-ft": "/home/shaohanh/qilongma/blob/share/Llama-3.1-8B-ft-checkpoint-402",
+    "Llama-3.1-8B-qwq_math_sft-random": "/home/shaohanh/qilongma/blob/share/sft_checkpoints/llama3.1_lora_4096_bsz8_reason_random",
+    "Llama-3.1-8B-qwq_math_sft-long": "/home/shaohanh/qilongma/blob/share/sft_checkpoints/llama3.1_lora_4096_bsz8_reason_max",
+    "Llama-3.1-8B-qwq_math_sft-short": "/home/shaohanh/qilongma/blob/share/sft_checkpoints/llama3.1_lora_4096_bsz8_reason_min",
 }
 
 # ================ config ====================
 # O1_MODEL = "o1-mini"
-O1_MODEL = "QwQ-32B-Preview"
+O1_MODEL = "Llama-3.1-8B-qwq_math_sft-short"
 CHAT_TEMPLATE_LLAMA = "{% if not add_generation_prompt is defined %}\n{% set add_generation_prompt = false %}\n{% endif %}\n{%- set ns = namespace(found=false) -%}\n{%- for message in messages -%}\n    {%- if message['role'] == 'system' -%}\n        {%- set ns.found = true -%}\n    {%- endif -%}\n{%- endfor -%}\n{{bos_token}}{%- if not ns.found -%}\n{{'Write a response that appropriately completes the request.\\n\\n'}}\n{%- endif %}\n{%- for message in messages %}\n    {%- if message['role'] == 'system' %}\n{{ message['content'] }}\n    {%- else %}\n        {%- if message['role'] == 'user' %}\n{{'### Instruction:\\n' + message['content'] + '\\n\\n'}}\n        {%- else %}\n{{'### Response:\\n' + message['content'] + '\\n\\n'}}\n        {%- endif %}\n    {%- endif %}\n{%- endfor %}\n{% if add_generation_prompt %}\n{{'### Response:'}}\n{% endif %}"
 CHAT_TEMPLATE_LLAMA_H = '''
     {% if not add_generation_prompt is defined %}\n
@@ -76,9 +79,13 @@ TOP_P = 0.9
 MAX_MODEL_TOKENS = 32768
 MAX_NEW_TOKENS = 32768 - 2048
 GPU_UTIL = 0.9
-N_SAMPLE = 200
+N_PROBLEM = 500
+N_SAMPLE = 32
 N_BUCKET = 10
-N_SAMPLES_PER_PROBLEM = 10
+N_SAMPLES_PER_PROBLEM = 1
+FIX_BUCKET_CDF = True
+if FIX_BUCKET_CDF:
+    BUCKET_STEP = 512
 
 MAX_WORKERS = 1
 # ================ config ====================
@@ -88,7 +95,12 @@ SAVE_DIR = f'results'
 timestamp = time.time()
 time_str = time.strftime('%m-%d_%H-%M', time.localtime(timestamp))
 run_output_dir = f'{SAVE_DIR}/{O1_MODEL}/MATH500/sampling/{time_str}'
-run_output_dir = '/home/shaohanh/qilongma/blob/inf_scal_law/results/QwQ-32B-Preview/MATH500/sampling/12-24_04-39_copy'
+# run_output_dir = '/home/shaohanh/qilongma/o1_inference_scaling_laws/results/QwQ-32B-Preview/MATH500/sampling/12-24_04-39_copy'
+# run_output_dir = '/home/shaohanh/qilongma/blob/inf_scal_law/results/Qwen2.5-32B-Instruct/????'
+# run_output_dir = '/home/shaohanh/qilongma/blob/inf_scal_law/results/Llama-3.1-8B-ft/MATH500/sampling/12-24_01-59'
+# run_output_dir = '/home/shaohanh/qilongma/blob/inf_scal_law/results/Llama-3.1-8B-qwq_math_sft-random/MATH500/sampling/01-02_00-32'
+# run_output_dir = '/home/shaohanh/qilongma/blob/inf_scal_law/results/Llama-3.1-8B-qwq_math_sft-long/MATH500/sampling/01-02_00-45'
+run_output_dir = '/home/shaohanh/qilongma/blob/inf_scal_law/results/Llama-3.1-8B-qwq_math_sft-short/MATH500/sampling/01-02_00-40'
 os.makedirs(run_output_dir, exist_ok=True)
 
 RESPONSE_CACHE_FILENAME = f'{run_output_dir}/response_cache.json'
@@ -357,6 +369,8 @@ def is_answer_correct(answer, answer_pred):
 
 def calculate_bucket_accuracy(dataset: list[dict], model, tokenizer, cache: dict):
 
+    dataset = [example for idx, example in enumerate(dataset) if idx < N_PROBLEM] # for testing
+    
     # Gather all token counts from sampled responses
     all_token_counts = []
     logging.info(f"Sampling responses {N_SAMPLE} times for each problem in {len(dataset)} problems.\n\n")
@@ -368,9 +382,14 @@ def calculate_bucket_accuracy(dataset: list[dict], model, tokenizer, cache: dict
     with cache_lock:
         save_cache(cache, RESPONSE_CACHE_FILENAME)
 
-    # Calculate bucket boundaries
-    logging.info(f"Calculating bucket boundaries.")
-    bucket_boundaries = [round(e) for e in np.percentile(all_token_counts, np.linspace(0, 100, N_BUCKET + 1))]
+    if not FIX_BUCKET_CDF:
+        # Calculate bucket boundaries
+        logging.info(f"Calculating bucket boundaries.")
+        bucket_boundaries = [round(e) for e in np.percentile(all_token_counts, np.linspace(0, 100, N_BUCKET + 1))]
+    else:
+        # use fixed bucket boundaries
+        logging.info(f"Using fixed bucket boundaries.")
+        bucket_boundaries = [0] + [BUCKET_STEP*i for i in range(1, N_BUCKET)] + [MAX_NEW_TOKENS]
     logging.info(f"Bucket boundaries: {bucket_boundaries}\n\n")
 
     # Assign responses to buckets and calculate accuracy
@@ -399,7 +418,13 @@ def calculate_bucket_accuracy(dataset: list[dict], model, tokenizer, cache: dict
                     for response in resampled_responses
                 ]
                 average_score = np.mean(scores)
-                results_by_bucket[bucket_idx].append(average_score)
+                if not FIX_BUCKET_CDF:
+                    results_by_bucket[bucket_idx].append(average_score)
+                else:
+                    for i in range(1, bucket_idx):
+                        results_by_bucket[i].append(0)
+                    for i in range(bucket_idx, N_BUCKET + 1):
+                        results_by_bucket[i].append(average_score)
             else:
                 num_missing_in_bucket[bucket_idx] += 1
         example_idx += 1
@@ -451,7 +476,7 @@ def main():
         plt.grid(True)
         plt.legend()
 
-        plot_file = os.path.join(run_output_dir, f"accuracy_plot_{N_SAMPLES_PER_PROBLEM}.png")
+        plot_file = os.path.join(run_output_dir, f"accuracy_plot{'_fix_bucket_cdf' if FIX_BUCKET_CDF else ''}_{N_SAMPLES_PER_PROBLEM}.png")
         plt.savefig(plot_file)
         plt.close()
 
