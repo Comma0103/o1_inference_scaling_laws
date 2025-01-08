@@ -6,9 +6,9 @@ from datasets import load_dataset
 import matplotlib.pyplot as plt
 import concurrent.futures
 
-import gemini_math500_sampling_tmp as gemini_code
-import o1_math500_sampling_tmp as oai_code
-import local_math500_sampling_vllm_tmp as local_code
+# import gemini_math500_sampling_tmp as gemini_code
+# import o1_math500_sampling_tmp as oai_code
+import local_math500_sampling_vllm_gcr as local_code
 
 N_PROBLEM = 500
 N_BUCKET = 10
@@ -143,11 +143,12 @@ def load_math500():
 
 def get_model_result(model_name, model_info, dataset):
     code = model_info['code']
-    if code == gemini_code:
-        code.GEMINI_MODEL = model_name
-    elif code == oai_code:
-        code.O1_MODEL = model_name
-    elif code == local_code:
+    # if code == gemini_code:
+    #     code.GEMINI_MODEL = model_name
+    # elif code == oai_code:
+    #     code.O1_MODEL = model_name
+    # el
+    if code == local_code:
         code.O1_MODEL = model_name
     code.N_PROBLEM = model_info['n_problem']
     code.N_SAMPLE = model_info['n_sample']
