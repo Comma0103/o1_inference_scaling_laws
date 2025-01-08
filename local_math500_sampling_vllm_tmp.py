@@ -96,7 +96,7 @@ timestamp = time.time()
 time_str = time.strftime('%m-%d_%H-%M', time.localtime(timestamp))
 run_output_dir = f'{SAVE_DIR}/{O1_MODEL}/MATH500/sampling/{time_str}'
 # run_output_dir = '/home/shaohanh/qilongma/o1_inference_scaling_laws/results/QwQ-32B-Preview/MATH500/sampling/12-24_04-39_copy'
-# run_output_dir = '/home/shaohanh/qilongma/blob/inf_scal_law/results/Qwen2.5-32B-Instruct/????'
+# run_output_dir = '/home/shaohanh/qilongma/blob/inf_scal_law/results/Qwen2.5-32B-Instruct/MATH500/sampling/01-07_01-14'
 # run_output_dir = '/home/shaohanh/qilongma/blob/inf_scal_law/results/Llama-3.1-8B-ft/MATH500/sampling/12-24_01-59'
 # run_output_dir = '/home/shaohanh/qilongma/blob/inf_scal_law/results/Llama-3.1-8B-qwq_math_sft-random/MATH500/sampling/01-02_00-32'
 # run_output_dir = '/home/shaohanh/qilongma/blob/inf_scal_law/results/Llama-3.1-8B-qwq_math_sft-long/MATH500/sampling/01-02_00-45'
@@ -452,7 +452,7 @@ def main():
     bucket_accuracies = calculate_bucket_accuracy(dataset, model, tokenizer, cache)
 
     # Save final results
-    result_file = os.path.join(run_output_dir, "bucket_accuracies.json")
+    result_file = os.path.join(run_output_dir, f"bucket_accuracies{'_fix_bucket_cdf' if FIX_BUCKET_CDF else ''}_{N_SAMPLES_PER_PROBLEM}.json")
     with open(result_file, 'w') as f:
         json.dump(bucket_accuracies, f, indent=2)
     logging.info(f"\n\nFinal bucket accuracies saved to {result_file}\n\n")

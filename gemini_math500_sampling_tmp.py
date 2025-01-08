@@ -365,7 +365,7 @@ def main():
     bucket_accuracies = calculate_bucket_accuracy(dataset, cache)
 
     # Save final results
-    result_file = os.path.join(run_output_dir, "bucket_accuracies.json")
+    result_file = os.path.join(run_output_dir, f"bucket_accuracies{'_fix_bucket_cdf' if FIX_BUCKET_CDF else ''}_{N_SAMPLES_PER_PROBLEM}.json")
     with open(result_file, 'w') as f:
         json.dump(bucket_accuracies, f, indent=2)
     logging.info(f"\n\nFinal bucket accuracies saved to {result_file}\n\n")
