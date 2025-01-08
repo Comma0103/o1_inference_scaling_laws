@@ -26,7 +26,7 @@ model_name_map = {
 
 # ================ config ====================
 # O1_MODEL = "o1-mini"
-O1_MODEL = "gpt-4o-mini"
+O1_MODEL = "gpt-4o"
 # OPENAI_CLIENT = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 OPENAI_CLIENT = Openai(apis=API_INFOS[model_name_map[O1_MODEL]])
 PROMPT = """You are a math problem solver. I will give you a problem from the American Invitational Mathematics Examination (AIME). At the end, provide the final answer as a single integer.
@@ -127,8 +127,11 @@ def save_cache(cache, filename):
                 if example_id not in cache_tmp:
                     tmp_newer = False
                     break
-                for idx, response in example_info['responses'].items():
-                    if idx not in cache_tmp[example_id]['responses']:
+                for token_limit, responses in example_info['responses'].items():
+                    if token_limit not in cache_tmp[example_id]['responses']:
+                        tmp_newer = False
+                        break
+                    elif len(responses) > len(cache_tmp[example_id]['responses'][token_limit]):
                         tmp_newer = False
                         break
             if tmp_newer:
