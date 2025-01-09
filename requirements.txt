@@ -1,5 +1,6 @@
 # azure_storage
 datasets
+google-generativeai
 ipython
 matplotlib
 numpy
