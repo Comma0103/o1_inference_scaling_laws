@@ -101,7 +101,7 @@ run_output_dir = f'{SAVE_DIR}/{O1_MODEL}/MATH500/sampling/{time_str}'
 # run_output_dir = '/home/shaohanh/qilongma/blob/inf_scal_law/results/Llama-3.1-8B-ft/MATH500/sampling/12-24_01-59'
 # run_output_dir = '/home/shaohanh/qilongma/blob/inf_scal_law/results/Llama-3.1-8B-qwq_math_sft-random/MATH500/sampling/01-02_00-32'
 # run_output_dir = '/home/shaohanh/qilongma/blob/inf_scal_law/results/Llama-3.1-8B-qwq_math_sft-long/MATH500/sampling/01-02_00-45'
-run_output_dir = '/home/shaohanh/qilongma/blob/inf_scal_law/results/Llama-3.1-8B-qwq_math_sft-short/MATH500/sampling/01-02_00-40'
+run_output_dir = '/home/shaohanh/qilongma/blob/inf_scal_law/results/Llama-3.1-8B-qwq_math_sft-short/MATH500/sampling/01-08_21-50'
 os.makedirs(run_output_dir, exist_ok=True)
 
 RESPONSE_CACHE_FILENAME = f'{run_output_dir}/response_cache.json'
@@ -360,8 +360,8 @@ def calculate_bucket_accuracy(dataset: list[dict], model, tokenizer, cache: dict
 # Main processing
 def main():
     cache = get_or_create_cache(RESPONSE_CACHE_FILENAME)
-    # model, tokenizer = load_model()
-    model, tokenizer = (None, None), None
+    model, tokenizer = load_model()
+    # model, tokenizer = (None, None), None
     dataset = load_math500()
     bucket_accuracies = calculate_bucket_accuracy(dataset, model, tokenizer, cache)
 
