@@ -5,15 +5,17 @@ import google.generativeai as genai
 if __name__ == '__main__':
 
     for m in genai.list_models():
-        print(m)
+        if "generateContent" in m.supported_generation_methods:
+            print(m)
     print("\n\n\n")
 
     tic = time.time()
     gemini_model = Gemini(
-        model_name="gemini-2.0-flash-thinking-exp-1219",
+        # model_name="gemini-2.0-flash-thinking-exp-1219",
+        model_name='gemini-1.5-pro',
         sys_inst="You are a helpful and harmless assistant. You are Gemini developed by Google. You should think step-by-step."
     )
-    res = gemini_model.generate(content="Explain how AI works", temperature=0.8, top_p=0.9, return_completion=True)
+    res = gemini_model.generate(content="Explain how AI works", temperature=0.8, top_p=0.9, return_logits=False, return_completion=True)
     toc = time.time()
     # print(res)
     print("Response text:", res.text)
