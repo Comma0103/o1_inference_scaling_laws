@@ -20,26 +20,26 @@ if FIX_BUCKET_CDF:
 MAX_WORKERS = 10
 
 model_results = {
-    # "gemini-2.0-flash-thinking-exp-1219": {
-    #     'code': gemini_code,
-    #     'n_problem': min(350, N_PROBLEM),
-    #     'n_sample': 16,
-    #     'n_bucket': N_BUCKET,
-    #     'n_sample_per_problem': N_SAMPLES_PER_PROBLEM,
-    #     'fix_bucket_cdf': FIX_BUCKET_CDF,
-    #     'bucket_step': BUCKET_STEP,
-    #     'run_output_dir': '/home/shaohanh/qilongma/o1_inference_scaling_laws/results/gemini-2.0-flash-thinking-exp-1219/MATH500/sampling/12-30_11-20',
-    # },
-    # "gpt-4o": {
-    #     'code': oai_code,
-    #     'n_problem': min(500, N_PROBLEM),
-    #     'n_sample': 32,
-    #     'n_bucket': N_BUCKET,
-    #     'n_sample_per_problem': N_SAMPLES_PER_PROBLEM,
-    #     'fix_bucket_cdf': FIX_BUCKET_CDF,
-    #     'bucket_step': BUCKET_STEP,
-    #     'run_output_dir': '/home/shaohanh/qilongma/o1_inference_scaling_laws/results/gpt-4o/MATH500/sampling/12-23_04-36_copy',
-    # },
+    "gemini-2.0-flash-thinking-exp-1219": {
+        'code': gemini_code,
+        'n_problem': min(350, N_PROBLEM),
+        'n_sample': 16,
+        'n_bucket': N_BUCKET,
+        'n_sample_per_problem': N_SAMPLES_PER_PROBLEM,
+        'fix_bucket_cdf': FIX_BUCKET_CDF,
+        'bucket_step': BUCKET_STEP,
+        'run_output_dir': '/home/shaohanh/qilongma/o1_inference_scaling_laws/results/gemini-2.0-flash-thinking-exp-1219/MATH500/sampling/12-30_11-20',
+    },
+    "gpt-4o": {
+        'code': oai_code,
+        'n_problem': min(500, N_PROBLEM),
+        'n_sample': 32,
+        'n_bucket': N_BUCKET,
+        'n_sample_per_problem': N_SAMPLES_PER_PROBLEM,
+        'fix_bucket_cdf': FIX_BUCKET_CDF,
+        'bucket_step': BUCKET_STEP,
+        'run_output_dir': '/home/shaohanh/qilongma/o1_inference_scaling_laws/results/gpt-4o/MATH500/sampling/12-23_04-36_copy',
+    },
     "gpt-4o-mini": {
         'code': oai_code,
         'n_problem': min(500, N_PROBLEM),
@@ -50,7 +50,27 @@ model_results = {
         'bucket_step': BUCKET_STEP,
         'run_output_dir': '/home/shaohanh/qilongma/o1_inference_scaling_laws/results/gpt-4o-mini/MATH500/sampling/12-23_04-37_copy',
     },
-    # "QwQ-32B-Preview": {
+    "QwQ-32B-Preview": {
+        'code': local_code,
+        'n_problem': min(500, N_PROBLEM),
+        'n_sample': 32,
+        'n_bucket': N_BUCKET,
+        'n_sample_per_problem': N_SAMPLES_PER_PROBLEM,
+        'fix_bucket_cdf': FIX_BUCKET_CDF,
+        'bucket_step': BUCKET_STEP,
+        'run_output_dir': '/home/shaohanh/qilongma/blob/inf_scal_law/results/QwQ-32B-Preview/MATH500/sampling/01-08_21-47',
+    },
+    "Qwen2.5-32B-Instruct": {
+        'code': local_code,
+        'n_problem': min(425, N_PROBLEM),
+        'n_sample': 32,
+        'n_bucket': N_BUCKET,
+        'n_sample_per_problem': N_SAMPLES_PER_PROBLEM,
+        'fix_bucket_cdf': FIX_BUCKET_CDF,
+        'bucket_step': BUCKET_STEP,
+        'run_output_dir': '/home/shaohanh/qilongma/blob/inf_scal_law/results/Qwen2.5-32B-Instruct/MATH500/sampling/01-07_01-14',
+    },
+    # "Llama-3.1-8B-ft": {
     #     'code': local_code,
     #     'n_problem': min(500, N_PROBLEM),
     #     'n_sample': 32,
@@ -58,64 +78,44 @@ model_results = {
     #     'n_sample_per_problem': N_SAMPLES_PER_PROBLEM,
     #     'fix_bucket_cdf': FIX_BUCKET_CDF,
     #     'bucket_step': BUCKET_STEP,
-    #     'run_output_dir': '/home/shaohanh/qilongma/o1_inference_scaling_laws/results/QwQ-32B-Preview/MATH500/sampling/12-24_04-39_copy',
+    #     'run_output_dir': '/home/shaohanh/qilongma/blob/inf_scal_law/results/Llama-3.1-8B-ft/MATH500/sampling/12-24_01-59',
     # },
-    # "Qwen2.5-32B-Instruct": {
-    #     'code': local_code,
-    #     'n_problem': min(425, N_PROBLEM),
-    #     'n_sample': 32,
-    #     'n_bucket': N_BUCKET,
-    #     'n_sample_per_problem': N_SAMPLES_PER_PROBLEM,
-    #     'fix_bucket_cdf': FIX_BUCKET_CDF,
-    #     'bucket_step': BUCKET_STEP,
-    #     'run_output_dir': '/home/shaohanh/qilongma/blob/inf_scal_law/results/Qwen2.5-32B-Instruct/MATH500/sampling/01-07_01-14',
-    # },
-    # # "Llama-3.1-8B-ft": {
-    # #     'code': local_code,
-    # #     'n_problem': min(500, N_PROBLEM),
-    # #     'n_sample': 32,
-    # #     'n_bucket': N_BUCKET,
-    # #     'n_sample_per_problem': N_SAMPLES_PER_PROBLEM,
-    # #     'fix_bucket_cdf': FIX_BUCKET_CDF,
-    # #     'bucket_step': BUCKET_STEP,
-    # #     'run_output_dir': '/home/shaohanh/qilongma/blob/inf_scal_law/results/Llama-3.1-8B-ft/MATH500/sampling/12-24_01-59',
-    # # },
-    # "Llama-3.1-8B-qwq_math_sft-random": {
-    #     'code': local_code,
-    #     'n_problem': min(500, N_PROBLEM),
-    #     'n_sample': 32,
-    #     'n_bucket': N_BUCKET,
-    #     'n_sample_per_problem': N_SAMPLES_PER_PROBLEM,
-    #     'fix_bucket_cdf': FIX_BUCKET_CDF,
-    #     'bucket_step': BUCKET_STEP,
-    #     'run_output_dir': '/home/shaohanh/qilongma/blob/inf_scal_law/results/Llama-3.1-8B-qwq_math_sft-random/MATH500/sampling/01-02_00-32',
-    # },
-    # "Llama-3.1-8B-qwq_math_sft-long": {
-    #     'code': local_code,
-    #     'n_problem': min(480, N_PROBLEM),
-    #     'n_sample': 32,
-    #     'n_bucket': N_BUCKET,
-    #     'n_sample_per_problem': N_SAMPLES_PER_PROBLEM,
-    #     'fix_bucket_cdf': FIX_BUCKET_CDF,
-    #     'bucket_step': BUCKET_STEP,
-    #     'run_output_dir': '/home/shaohanh/qilongma/blob/inf_scal_law/results/Llama-3.1-8B-qwq_math_sft-long/MATH500/sampling/01-02_00-45',
-    # },
-    # "Llama-3.1-8B-qwq_math_sft-short": {
-    #     'code': local_code,
-    #     'n_problem': min(500, N_PROBLEM),
-    #     'n_sample': 32,
-    #     'n_bucket': N_BUCKET,
-    #     'n_sample_per_problem': N_SAMPLES_PER_PROBLEM,
-    #     'fix_bucket_cdf': FIX_BUCKET_CDF,
-    #     'bucket_step': BUCKET_STEP,
-    #     'run_output_dir': '/home/shaohanh/qilongma/blob/inf_scal_law/results/Llama-3.1-8B-qwq_math_sft-short/MATH500/sampling/01-02_00-40',
-    # },
+    "Llama-3.1-8B-qwq_math_sft-random": {
+        'code': local_code,
+        'n_problem': min(500, N_PROBLEM),
+        'n_sample': 32,
+        'n_bucket': N_BUCKET,
+        'n_sample_per_problem': N_SAMPLES_PER_PROBLEM,
+        'fix_bucket_cdf': FIX_BUCKET_CDF,
+        'bucket_step': BUCKET_STEP,
+        'run_output_dir': '/home/shaohanh/qilongma/blob/inf_scal_law/results/Llama-3.1-8B-qwq_math_sft-random/MATH500/sampling/01-02_00-32',
+    },
+    "Llama-3.1-8B-qwq_math_sft-long": {
+        'code': local_code,
+        'n_problem': min(480, N_PROBLEM),
+        'n_sample': 32,
+        'n_bucket': N_BUCKET,
+        'n_sample_per_problem': N_SAMPLES_PER_PROBLEM,
+        'fix_bucket_cdf': FIX_BUCKET_CDF,
+        'bucket_step': BUCKET_STEP,
+        'run_output_dir': '/home/shaohanh/qilongma/blob/inf_scal_law/results/Llama-3.1-8B-qwq_math_sft-long/MATH500/sampling/01-02_00-45',
+    },
+    "Llama-3.1-8B-qwq_math_sft-short": {
+        'code': local_code,
+        'n_problem': min(500, N_PROBLEM),
+        'n_sample': 32,
+        'n_bucket': N_BUCKET,
+        'n_sample_per_problem': N_SAMPLES_PER_PROBLEM,
+        'fix_bucket_cdf': FIX_BUCKET_CDF,
+        'bucket_step': BUCKET_STEP,
+        'run_output_dir': '/home/shaohanh/qilongma/blob/inf_scal_law/results/Llama-3.1-8B-qwq_math_sft-short/MATH500/sampling/01-08_21-50',
+    },
 }
 
 SAVE_DIR = f'results'
 timestamp = time.time()
 time_str = time.strftime('%m-%d_%H-%M-%S', time.localtime(timestamp))
-run_output_dir = f'{SAVE_DIR}/all_models/MATH500/sampling/{time_str}-4o_mini'
+run_output_dir = f'{SAVE_DIR}/all_models/MATH500/sampling/{time_str}'
 os.makedirs(run_output_dir, exist_ok=True)
 
 logging.basicConfig(
@@ -165,14 +165,24 @@ def get_model_result(model_name, model_info, dataset):
     if code == local_code:
         # model, tokenizer = code.load_model()
         model, tokenizer = (None, None), None
-        bucket_accuracies = code.calculate_bucket_accuracy(dataset, model, tokenizer, cache)
+        bucket_accuracies, all_token_counts = code.calculate_bucket_accuracy(dataset, model, tokenizer, cache)
     else:
-        bucket_accuracies = code.calculate_bucket_accuracy(dataset, cache)
+        bucket_accuracies, all_token_counts = code.calculate_bucket_accuracy(dataset, cache)
+    result_dict = {
+        'n_problem': code.N_PROBLEM,
+        'n_sample': code.N_SAMPLE,
+        'n_bucket': code.N_BUCKET,
+        'n_sample_per_problem': code.N_SAMPLE_PER_PROBLEM,
+        'fix_bucket_cdf': code.FIX_BUCKET_CDF,
+        'bucket_step': code.BUCKET_STEP if code.FIX_BUCKET_CDF else None,
+        'bucket_accuracies': bucket_accuracies,
+        'avg_token_counts': sum(all_token_counts) / len(all_token_counts),
+    }
 
     # Save final results
     result_file = os.path.join(code.run_output_dir, f"bucket_accuracies{'_fix_bucket_cdf' if code.FIX_BUCKET_CDF else ''}_{code.N_SAMPLES_PER_PROBLEM}.json")
     with open(result_file, 'w') as f:
-        json.dump(bucket_accuracies, f, indent=2)
+        json.dump(result_dict, f, indent=2)
     logging.info(f"\n\nFinal bucket accuracies saved to {result_file}\n\n")
     with code.cache_lock:
         code.save_cache(cache, code.RESPONSE_CACHE_FILENAME)
@@ -215,5 +225,48 @@ def main():
     logging.info(f"Accuracy plot saved to {plot_file}\n\n")
 
 
+def calculate_avg_tokens(json_file_path, code_type):
+    """
+    计算 JSON 文件中每个响应的平均 token 数。
+
+    :param json_file_path: str, JSON 文件路径
+    :return: float, 平均 token 数
+    """
+    try:
+        with open(json_file_path, 'r', encoding='utf-8') as file:
+            data = json.load(file)
+        
+        total_tokens = 0
+        response_count = 0
+        
+        for key, value in data.items():
+            if "responses" in value:
+                for response_id, response_data in value["responses"].items():
+                    if "tokens" in response_data:
+                        if (code_type == oai_code and response_data["tokens"] < 16380) or \
+                           (code_type == local_code and response_data["tokens"] < 30715) or \
+                           (code_type == gemini_code and response_data["tokens"] < 8190):
+                            total_tokens += response_data["tokens"]
+                            response_count += 1
+        
+        if response_count == 0:
+            return 0  # 避免除零错误
+        
+        return total_tokens / response_count
+    
+    except FileNotFoundError:
+        print(f"指定的 JSON 文件({json_file_path})未找到。")
+        return None
+    except json.JSONDecodeError:
+        print(f"JSON 文件({json_file_path})格式无效。")
+        return None
+
+
 if __name__ == '__main__':
-    main()
+    # main()
+
+    # 计算每个模型输出的平均 token 数
+    for model_name, model_info in model_results.items():
+        json_file_path = os.path.join(model_info["run_output_dir"], "response_cache.json")
+        avg_tokens = calculate_avg_tokens(json_file_path, model_info['code'])
+        print(f"模型 {model_name} 的平均 token 数为 {avg_tokens}。")
