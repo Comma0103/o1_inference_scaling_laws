@@ -96,7 +96,7 @@ SAVE_DIR = f'results'
 timestamp = time.time()
 time_str = time.strftime('%m-%d_%H-%M', time.localtime(timestamp))
 run_output_dir = f'{SAVE_DIR}/{O1_MODEL}/MATH500/sampling/{time_str}'
-# run_output_dir = '/home/shaohanh/qilongma/o1_inference_scaling_laws/results/QwQ-32B-Preview/MATH500/sampling/12-24_04-39_copy'
+# run_output_dir = '/home/shaohanh/qilongma/blob/inf_scal_law/results/QwQ-32B-Preview/MATH500/sampling/01-08_21-47'
 # run_output_dir = '/home/shaohanh/qilongma/blob/inf_scal_law/results/Qwen2.5-32B-Instruct/MATH500/sampling/01-07_01-14'
 # run_output_dir = '/home/shaohanh/qilongma/blob/inf_scal_law/results/Llama-3.1-8B-ft/MATH500/sampling/12-24_01-59'
 # run_output_dir = '/home/shaohanh/qilongma/blob/inf_scal_law/results/Llama-3.1-8B-qwq_math_sft-random/MATH500/sampling/01-02_00-32'
@@ -355,7 +355,7 @@ def calculate_bucket_accuracy(dataset: list[dict], model, tokenizer, cache: dict
         }
         logging.info(f"Bucket {bucket} ({bucket_boundaries[bucket-1]} - {bucket_boundaries[bucket]}): Accuracy {accuracy}")
 
-    return bucket_accuracies
+    return bucket_accuracies, all_token_counts
 
 # Main processing
 def main():

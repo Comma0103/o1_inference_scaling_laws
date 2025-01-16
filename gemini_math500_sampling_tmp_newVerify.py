@@ -268,7 +268,7 @@ def calculate_bucket_accuracy(dataset: list[dict], cache: dict):
         }
         logging.info(f"Bucket {bucket} ({bucket_boundaries[bucket-1]} - {bucket_boundaries[bucket]}): Accuracy {accuracy}")
 
-    return bucket_accuracies
+    return bucket_accuracies, all_token_counts
 
 # Main processing
 def main():
