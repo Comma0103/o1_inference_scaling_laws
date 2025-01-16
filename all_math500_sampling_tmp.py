@@ -10,56 +10,56 @@ import gemini_math500_sampling_tmp as gemini_code
 import o1_math500_sampling_tmp as oai_code
 import local_math500_sampling_vllm_tmp as local_code
 
-N_PROBLEM = 500
+N_PROBLEM = 250
 N_BUCKET = 10
 N_SAMPLES_PER_PROBLEM = 1
 FIX_BUCKET_CDF = True
 if FIX_BUCKET_CDF:
     BUCKET_STEP = 512
 
-MAX_WORKERS = 1
+MAX_WORKERS = 10
 
 model_results = {
-    # "gemini-2.0-flash-thinking-exp-1219": {
-    #     'code': gemini_code,
-    #     'n_problem': min(350, N_PROBLEM),
-    #     'n_sample': 16,
-    #     'n_bucket': N_BUCKET,
-    #     'n_sample_per_problem': N_SAMPLES_PER_PROBLEM,
-    #     'fix_bucket_cdf': FIX_BUCKET_CDF,
-    #     'bucket_step': BUCKET_STEP,
-    #     'run_output_dir': '/home/shaohanh/qilongma/o1_inference_scaling_laws/results/gemini-2.0-flash-thinking-exp-1219/MATH500/sampling/12-30_11-20',
-    # },
-    # "gpt-4o": {
-    #     'code': oai_code,
-    #     'n_problem': min(500, N_PROBLEM),
-    #     'n_sample': 32,
-    #     'n_bucket': N_BUCKET,
-    #     'n_sample_per_problem': N_SAMPLES_PER_PROBLEM,
-    #     'fix_bucket_cdf': FIX_BUCKET_CDF,
-    #     'bucket_step': BUCKET_STEP,
-    #     'run_output_dir': '/home/shaohanh/qilongma/o1_inference_scaling_laws/results/gpt-4o/MATH500/sampling/12-23_04-36_copy',
-    # },
-    # "gpt-4o-mini": {
-    #     'code': oai_code,
-    #     'n_problem': min(500, N_PROBLEM),
-    #     'n_sample': 32,
-    #     'n_bucket': N_BUCKET,
-    #     'n_sample_per_problem': N_SAMPLES_PER_PROBLEM,
-    #     'fix_bucket_cdf': FIX_BUCKET_CDF,
-    #     'bucket_step': BUCKET_STEP,
-    #     'run_output_dir': '/home/shaohanh/qilongma/o1_inference_scaling_laws/results/gpt-4o-mini/MATH500/sampling/12-23_04-37_copy',
-    # },
-    # "QwQ-32B-Preview": {
-    #     'code': local_code,
-    #     'n_problem': min(500, N_PROBLEM),
-    #     'n_sample': 32,
-    #     'n_bucket': N_BUCKET,
-    #     'n_sample_per_problem': N_SAMPLES_PER_PROBLEM,
-    #     'fix_bucket_cdf': FIX_BUCKET_CDF,
-    #     'bucket_step': BUCKET_STEP,
-    #     'run_output_dir': '/home/shaohanh/qilongma/o1_inference_scaling_laws/results/QwQ-32B-Preview/MATH500/sampling/12-24_04-39_copy',
-    # },
+    "gemini-2.0-flash-thinking-exp-1219": {
+        'code': gemini_code,
+        'n_problem': min(350, N_PROBLEM),
+        'n_sample': 16,
+        'n_bucket': N_BUCKET,
+        'n_sample_per_problem': N_SAMPLES_PER_PROBLEM,
+        'fix_bucket_cdf': FIX_BUCKET_CDF,
+        'bucket_step': BUCKET_STEP,
+        'run_output_dir': '/home/shaohanh/qilongma/o1_inference_scaling_laws/results/gemini-2.0-flash-thinking-exp-1219/MATH500/sampling/12-30_11-20',
+    },
+    "gpt-4o": {
+        'code': oai_code,
+        'n_problem': min(500, N_PROBLEM),
+        'n_sample': 32,
+        'n_bucket': N_BUCKET,
+        'n_sample_per_problem': N_SAMPLES_PER_PROBLEM,
+        'fix_bucket_cdf': FIX_BUCKET_CDF,
+        'bucket_step': BUCKET_STEP,
+        'run_output_dir': '/home/shaohanh/qilongma/o1_inference_scaling_laws/results/gpt-4o/MATH500/sampling/12-23_04-36_copy',
+    },
+    "gpt-4o-mini": {
+        'code': oai_code,
+        'n_problem': min(500, N_PROBLEM),
+        'n_sample': 32,
+        'n_bucket': N_BUCKET,
+        'n_sample_per_problem': N_SAMPLES_PER_PROBLEM,
+        'fix_bucket_cdf': FIX_BUCKET_CDF,
+        'bucket_step': BUCKET_STEP,
+        'run_output_dir': '/home/shaohanh/qilongma/o1_inference_scaling_laws/results/gpt-4o-mini/MATH500/sampling/12-23_04-37_copy',
+    },
+    "QwQ-32B-Preview": {
+        'code': local_code,
+        'n_problem': min(500, N_PROBLEM),
+        'n_sample': 32,
+        'n_bucket': N_BUCKET,
+        'n_sample_per_problem': N_SAMPLES_PER_PROBLEM,
+        'fix_bucket_cdf': FIX_BUCKET_CDF,
+        'bucket_step': BUCKET_STEP,
+        'run_output_dir': '/home/shaohanh/qilongma/o1_inference_scaling_laws/results/QwQ-32B-Preview/MATH500/sampling/12-24_04-39_copy',
+    },
     "Qwen2.5-32B-Instruct": {
         'code': local_code,
         'n_problem': min(425, N_PROBLEM),
@@ -80,16 +80,16 @@ model_results = {
     #     'bucket_step': BUCKET_STEP,
     #     'run_output_dir': '/home/shaohanh/qilongma/blob/inf_scal_law/results/Llama-3.1-8B-ft/MATH500/sampling/12-24_01-59',
     # },
-    # "Llama-3.1-8B-qwq_math_sft-random": {
-    #     'code': local_code,
-    #     'n_problem': min(500, N_PROBLEM),
-    #     'n_sample': 32,
-    #     'n_bucket': N_BUCKET,
-    #     'n_sample_per_problem': N_SAMPLES_PER_PROBLEM,
-    #     'fix_bucket_cdf': FIX_BUCKET_CDF,
-    #     'bucket_step': BUCKET_STEP,
-    #     'run_output_dir': '/home/shaohanh/qilongma/blob/inf_scal_law/results/Llama-3.1-8B-qwq_math_sft-random/MATH500/sampling/01-02_00-32',
-    # },
+    "Llama-3.1-8B-qwq_math_sft-random": {
+        'code': local_code,
+        'n_problem': min(500, N_PROBLEM),
+        'n_sample': 32,
+        'n_bucket': N_BUCKET,
+        'n_sample_per_problem': N_SAMPLES_PER_PROBLEM,
+        'fix_bucket_cdf': FIX_BUCKET_CDF,
+        'bucket_step': BUCKET_STEP,
+        'run_output_dir': '/home/shaohanh/qilongma/blob/inf_scal_law/results/Llama-3.1-8B-qwq_math_sft-random/MATH500/sampling/01-02_00-32',
+    },
     "Llama-3.1-8B-qwq_math_sft-long": {
         'code': local_code,
         'n_problem': min(480, N_PROBLEM),
@@ -100,16 +100,16 @@ model_results = {
         'bucket_step': BUCKET_STEP,
         'run_output_dir': '/home/shaohanh/qilongma/blob/inf_scal_law/results/Llama-3.1-8B-qwq_math_sft-long/MATH500/sampling/01-02_00-45',
     },
-    # "Llama-3.1-8B-qwq_math_sft-short": {
-    #     'code': local_code,
-    #     'n_problem': min(500, N_PROBLEM),
-    #     'n_sample': 32,
-    #     'n_bucket': N_BUCKET,
-    #     'n_sample_per_problem': N_SAMPLES_PER_PROBLEM,
-    #     'fix_bucket_cdf': FIX_BUCKET_CDF,
-    #     'bucket_step': BUCKET_STEP,
-    #     'run_output_dir': '/home/shaohanh/qilongma/blob/inf_scal_law/results/Llama-3.1-8B-qwq_math_sft-short/MATH500/sampling/01-02_00-40',
-    # },
+    "Llama-3.1-8B-qwq_math_sft-short": {
+        'code': local_code,
+        'n_problem': min(500, N_PROBLEM),
+        'n_sample': 32,
+        'n_bucket': N_BUCKET,
+        'n_sample_per_problem': N_SAMPLES_PER_PROBLEM,
+        'fix_bucket_cdf': FIX_BUCKET_CDF,
+        'bucket_step': BUCKET_STEP,
+        'run_output_dir': '/home/shaohanh/qilongma/blob/inf_scal_law/results/Llama-3.1-8B-qwq_math_sft-short/MATH500/sampling/01-02_00-40',
+    },
 }
 
 SAVE_DIR = f'results'
@@ -163,8 +163,8 @@ def get_model_result(model_name, model_info, dataset):
     cache = code.get_or_create_cache(code.RESPONSE_CACHE_FILENAME)
 
     if code == local_code:
-        model, tokenizer = code.load_model()
-        # model, tokenizer = (None, None), None
+        # model, tokenizer = code.load_model()
+        model, tokenizer = (None, None), None
         bucket_accuracies = code.calculate_bucket_accuracy(dataset, model, tokenizer, cache)
     else:
         bucket_accuracies = code.calculate_bucket_accuracy(dataset, cache)
